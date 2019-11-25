@@ -26,8 +26,8 @@ CSVFILE = "/tmp/juniper_installed_base.csv"
 
 class Juniper(Report):
     description = """
-    Checks the consistency of Netbox data against a csv export of the my.juniper.net installed base.
-    And the other way around.
+    Checks the consistency of Netbox data against a CSV export of the my.juniper.net installed base,
+    and vice-versa.
     """
 
     def __init__(self, *args, **kwargs):
@@ -175,7 +175,7 @@ class Juniper(Report):
                 if city not in device.site.physical_address.lower():
                     self.log_failure(
                         device,
-                        "City missmatch: {city} (Juniper) vs. {netbox_address} (Netbox)".format(
+                        "City mismatch: {city} (Juniper) vs. {netbox_address} (Netbox)".format(
                             city=city, netbox_address=device.site.physical_address
                         ),
                     )

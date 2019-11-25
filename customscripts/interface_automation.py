@@ -11,15 +11,16 @@ from extras.scripts import Script, ObjectVar, BooleanVar
 
 class CreateManagementInterface(Script):
     class Meta:
-        name = "Create Management Interface"
+        name = "Create management interface"
         description = "Create a management interface for a specified device and assign an IP address."
 
     device = ObjectVar(
-        description="The Device to add management interface to",
-        queryset=Device.objects.filter(device_role__slug="server"),
+        description="Device to add management interface to", queryset=Device.objects.filter(device_role__slug="server"),
     )
     add_ip = BooleanVar(
-        description="Automatically add IP address from appropriate management network at site.", default=True
+        label="Add IP",
+        description="Automatically add IP address from appropriate management network at site.",
+        default=True,
     )
 
     def _add_ip_to_interface(self, device, interface):
@@ -63,7 +64,7 @@ class CreateManagementInterface(Script):
             newip.tenant = device.tenant
             newip.save()
 
-            message = "Created ip {} for mgmt on device {}".format(newip, device.name)
+            message = "Created IP {} for mgmt on device {}".format(newip, device.name)
             self.log_success(message)
             return message
 

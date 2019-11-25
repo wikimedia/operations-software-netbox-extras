@@ -109,7 +109,7 @@ class Coherence(Report):
             self.log_success(None, "No duplicate serials found")
 
     def test_serials(self):
-        """Determine if all serials are non-null."""
+        """Determine if all serial numbers are non-null."""
         success_count = 0
         for device in (
             _get_devices_query()
@@ -117,10 +117,10 @@ class Coherence(Report):
             .exclude(device_role__slug__in=DEVICE_ROLE_BLACKLIST)
         ):
             if device.serial is None or device.serial == "":
-                self.log_failure(device, "missing serial")
+                self.log_failure(device, "missing serial number")
             else:
                 success_count += 1
-        self.log_success(None, "{} present serials".format(success_count))
+        self.log_success(None, "{} present serial numbers".format(success_count))
 
     def test_ticket(self):
         """Determine if the procurement ticket matches the expected format."""

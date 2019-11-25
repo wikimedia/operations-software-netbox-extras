@@ -135,7 +135,7 @@ class Cables(Report):
                     self.log_failure(cable, "duplicate cable label (site {})".format(label[1]))
             else:
                 success += 1
-        self.log_success(None, "{} non-duplicate cable labels.".format(success))
+        self.log_success(None, "{} non-duplicate cable labels".format(success))
 
     def test_blank_cable_label(self):
         """Cables should not have blank labels."""
