@@ -1,0 +1,15 @@
+#!/bin/bash
+
+DUMPPATH=/srv/netbox-dumps
+VENVPYTHON=/srv/deployment/netbox/venv/bin/python
+DUMPSCRIPT=/srv/deployment/netbox/deploy/scripts/dumpbackup.py
+KEEP=16
+
+for dir in $(ls -d $DUMPPATH/20* | sort -h -r | tail -n +$KEEP); do
+    # carefully clean old directories
+    rm -v -f "$dir/*.csv"
+    rm -v -f "$dir/*.json"
+    rmdir -v "$dir"
+done
+
+$VENVPYTHON $DUMPSCRIPT -m "$DUMPPATH/$(date +'%Y-%m-%d-%H:%M')"
