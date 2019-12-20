@@ -65,7 +65,7 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     """
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--config', help='The config file to load.', default='/etc/dns-snippets.ini')
+    parser.add_argument('-c', '--config', help='The config file to load.', default='/etc/netbox/dns.cfg')
     parser.add_argument('-v', '--verbose', help='Verbose mode.', action='store_true')
     parser.add_argument('-b', '--batch', action='store_true',
                         help=('Enable the non-interactive mode, the commit will not be pushed to its remote and the '
