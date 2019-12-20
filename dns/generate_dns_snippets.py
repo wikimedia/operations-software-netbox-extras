@@ -9,8 +9,10 @@ Todo:
 """
 import argparse
 import ipaddress
+import json
 import logging
 import os
+import shutil
 import sys
 import tempfile
 
@@ -63,8 +65,12 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     """
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--config', help='The config file to load.', default='/etc/dns-snippets.cfg')
+    parser.add_argument('-c', '--config', help='The config file to load.', default='/etc/dns-snippets.ini')
     parser.add_argument('-v', '--verbose', help='Verbose mode.', action='store_true')
+    parser.add_argument('-b', '--batch', action='store_true',
+                        help=('Enable the non-interactive mode, the commit will not be pushed to its remote and the '
+                              'temporary directory will not be deleted. A JSON with the path of the temporary '
+                              'directory and the SHA1 of the commit will be printed to the last line of stdout.'))
     parser.add_argument('message', help='The commit message to use.')
 
     return parser.parse_args(args)
@@ -208,18 +214,19 @@ def get_file_stats(tmpdir: str) -> Tuple[int, int]:
     return files, lines
 
 
-def commit_changes(args: argparse.Namespace, working_repo: git.Repo) -> Optional[Dict[str, int]]:
+def commit_changes(args: argparse.Namespace, working_repo: git.Repo) -> Optional[git.objects.commit.Commit]:
     """Add local changes and commit them, if any."""
     working_repo.index.add('*')
-    if not working_repo.index.diff(working_repo.head.commit):
+    if working_repo.head.is_valid() and not working_repo.index.diff(working_repo.head.commit):
         logger.info('Nothing to commit!')
         return None
 
     author = git.Actor(GIT_USER_NAME, GIT_USER_EMAIL)
     message = '{user}: {message}'.format(user=get_user_id(), message=args.message)
     commit = working_repo.index.commit(message, author=author, committer=author)
+    logger.info('Committed changes: %s', commit.hexsha)
 
-    return commit.stats.total
+    return commit
 
 
 def validate_delta(changed: int, existing: int, warning: int, error: int, what: str) -> None:
@@ -249,19 +256,27 @@ def run(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> int:
     records = generate_records(devices, config.getint('dns_snippets', 'min_records'))
     working_repo = setup_repo(config, tmpdir)
     files, lines = get_file_stats(tmpdir)
-    working_repo.git.rm('.', r=True)  # Delete all existing files to ensure removal of stale files
+    working_repo.git.rm('.', r=True, ignore_unmatch=True)  # Delete all existing files to ensure removal of stale files
     generate_snippets(records, tmpdir)
-    delta = commit_changes(args, working_repo)
-    if delta is None:
+    commit = commit_changes(args, working_repo)
+
+    if commit is None:
+        if args.batch:
+            print(json.dumps({'no_changes': True}))
         return NO_CHANGES_RETURN_CODE
 
     print(working_repo.git.show(['--color=always', 'HEAD']))
-    validate(files, lines, delta)
+    validate(files, lines, commit.stats.total)
+
+    if args.batch:
+        print(json.dumps({'path': tmpdir, 'sha1': commit.hexsha}))
+        return 0
+
     answer = input('OK to push the changes to the {origin} repository? (y/n) '.format(
         origin=config.get('dns_snippets', 'repo_path')))
     if answer == 'y':
         push_info = working_repo.remote().push()[0]
-        logger.info('Pushed with %d flags: %s %s', push_info.flags, push_info.summary.strip(), delta)
+        logger.info('Pushed with bitflags %d: %s %s', push_info.flags, push_info.summary.strip(), commit.stats.total)
         exit_code = 0
     else:
         logger.error('Manually aborted.')
@@ -277,16 +292,21 @@ def main() -> int:
     config = ConfigParser()
     config.read(args.config)
 
-    with tempfile.TemporaryDirectory(prefix='dns-snippets-') as tmpdir:
-        try:
-            exit_code = run(args, config, tmpdir)
-        except Exception:
-            logger.exception('Failed to run')
-            exit_code = 1
+    tmpdir = tempfile.mkdtemp(prefix='dns-snippets-')
+    try:
+        exit_code = run(args, config, tmpdir)
 
+    except Exception:
+        logger.exception('Failed to run')
+        exit_code = 1
+
+    finally:
         if exit_code not in (0, NO_CHANGES_RETURN_CODE):
             print('An error occurred, the generated files can be inspected in {tmpdir}'.format(tmpdir=tmpdir))
             input('Press any key to cleanup the generated files and exit ')
+
+        if not args.batch or exit_code == NO_CHANGES_RETURN_CODE:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     return exit_code
 
