@@ -83,7 +83,7 @@ def get_netbox_devices(config: ConfigParser) -> DefaultDict[str, Dict]:
     api = pynetbox.api(url=config.get('netbox', 'api'), token=config.get('netbox', 'token_ro'))
     addresses = {addr.id: addr for addr in api.ipam.ip_addresses.all()}
 
-    for device in api.dcim.devices.filter(status=NETBOX_DEVICE_STATUSES):
+    for device in api.dcim.devices.filter(status=list(NETBOX_DEVICE_STATUSES)):
         devices[device.name]['device'] = device
         if device.primary_ip4 is not None:
             devices[device.name]['addresses'].add(addresses[device.primary_ip4.id])
