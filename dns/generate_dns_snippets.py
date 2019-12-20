@@ -276,11 +276,19 @@ def run(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> int:
         origin=config.get('dns_snippets', 'repo_path')))
     if answer == 'y':
         push_info = working_repo.remote().push()[0]
-        logger.info('Pushed with bitflags %d: %s %s', push_info.flags, push_info.summary.strip(), commit.stats.total)
-        exit_code = 0
+        if push_info.flags & push_info.ERROR == push_info.ERROR:
+            level = logging.ERROR
+            exit_code = 2
+        else:
+            level = logging.INFO
+            exit_code = 0
+
+        logger.log(level, 'Pushed with bitflags %d: %s %s',
+                   push_info.flags, push_info.summary.strip(), commit.stats.total)
+
     else:
         logger.error('Manually aborted.')
-        exit_code = 2
+        exit_code = 3
 
     return exit_code
 
