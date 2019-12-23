@@ -154,7 +154,8 @@ def generate_address_records(zone: str, hostname: str, address: pynetbox.models.
         # Decomissioning hosts must have only the mgmt record for the asset tag
         records.append(Record(zone, reverse_zone, hostname, ip, reverse_ip))
 
-    if address.interface.name == 'mgmt':
+    # Generate the additional asset tag mgmt record only if the Netbox name is not the asset tag already
+    if address.interface.name == 'mgmt' and device.name.lower() != device.asset_tag.lower():
         records.append(Record(zone, reverse_zone, device.asset_tag.lower(), ip, reverse_ip))
 
     return reverse_zone, records
