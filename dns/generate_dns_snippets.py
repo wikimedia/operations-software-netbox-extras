@@ -91,8 +91,15 @@ def get_netbox_devices(config: ConfigParser) -> DefaultDict[str, Dict]:
             devices[device.name]['addresses'].add(addresses[device.primary_ip6.id])
 
     for address in addresses.values():
-        if address.interface.name == 'mgmt' and address.interface.device.name in devices:
-            devices[address.interface.device.name]['addresses'].add(address)
+        if address.interface.device.name not in devices:
+            logger.warning('Device %s of IP %s not in devices, skipping.', address.interface.device.name, address)
+            continue
+
+        if not address.dns_name:
+            logger.warning('%s:%s has no DNS name', address.interface.device.name, address.interface.name)
+            continue
+
+        devices[address.interface.device.name]['addresses'].add(address)
 
     logger.info('Gathered %d devices from Netbox', len(devices))
     return devices
