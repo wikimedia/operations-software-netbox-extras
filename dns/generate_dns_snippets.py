@@ -187,7 +187,7 @@ def setup_repo(config: ConfigParser, tmpdir: str) -> git.Repo:
 
 def write_direct_records(zonefile: TextIO, records: Sequence[Record]) -> None:
     """Write direct records to the given zonefile."""
-    for record in sorted(records, key=lambda record: (record.hostname, record.ip.exploded)):
+    for record in sorted(records, key=lambda r: ('.'.join(r.hostname.split('.')[::-1]), r.ip.exploded)):
         zonefile.write('{hostname} 1H IN {record_type} {ip}\n'.format(
             hostname=record.hostname.ljust(DIRECT_LJUST_LEN),
             record_type='AAAA' if record.ip.version == 6 else 'A',
