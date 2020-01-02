@@ -105,6 +105,22 @@ def get_netbox_devices(config: ConfigParser) -> DefaultDict[str, Dict]:
     return devices
 
 
+def split_dns_name(dns_name: str) -> Tuple[str, str]:
+    """Given a FQDN split it into hostname and zone."""
+    parts = dns_name.strip().split('.')
+    max_len = 2
+    if 'frack' in parts:
+        max_len += 1
+    if 'mgmt' in parts:
+        max_len += 1
+
+    split_len = min(len(parts) - 1, max_len)
+    hostname = '.'.join(parts[:-split_len])
+    zone = '.'.join(parts[-split_len:])
+
+    return hostname, zone
+
+
 def generate_records(devices: Mapping, min_records: int) -> Dict[str, DefaultDict[str, List[Record]]]:
     """Generate direct and reverse records based on Netbox data."""
     logger.info('Generating DNS records')
@@ -112,16 +128,7 @@ def generate_records(devices: Mapping, min_records: int) -> Dict[str, DefaultDic
     records_count = 0
     for name, device_data in devices.items():
         for address in device_data['addresses']:
-            if address.dns_name is None:
-                logger.warning('%s:%s has no DNS name', name, address.interface.name)
-                continue
-
-            try:
-                hostname, zone = address.dns_name.strip().split('.', 1)
-            except ValueError:
-                logger.error('%s:%s has malformed dns_name %s', name, address.interface.name, address.dns_name)
-                continue
-
+            hostname, zone = split_dns_name(address.dns_name)
             reverse_zone, record_objects = generate_address_records(zone, hostname, address, device_data['device'])
             if record_objects:
                 records['direct'][zone].extend(record_objects)
