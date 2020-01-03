@@ -30,7 +30,8 @@ from git.util import get_user_id
 logger = logging.getLogger()
 GIT_USER_NAME = 'generate-dns-snippets'
 GIT_USER_EMAIL = 'noc@wikimedia.org'
-NETBOX_DEVICE_STATUSES = (1, 2, 3, 4, 6)  # Active, Planned, Staged, Failed, Decommissioning
+NETBOX_DEVICE_STATUSES = (1, 2, 3, 4, 5, 6)  # Active, Planned, Staged, Failed, Inventory, Decommissioning
+NETBOX_DEVICE_MGMT_ONLY_STATUSES = ('Inventory', 'Decommissioning')
 DIRECT_LJUST_LEN = 40  # Fixed justification to avoid large diffs
 NO_CHANGES_RETURN_CODE = 99
 WARNING_PERCENTAGE_LINES_CHANGED = 3
@@ -164,12 +165,13 @@ def generate_address_records(zone: str, hostname: str, address: pynetbox.models.
             reverse_zone = interface.network.reverse_pointer.replace('/', '-')
 
     records = []
-    if device.status.label != 'Decommissioning':
-        # Decomissioning hosts must have only the mgmt record for the asset tag
+    if device.status.label not in NETBOX_DEVICE_MGMT_ONLY_STATUSES:
+        # Some states must have only the mgmt record for the asset tag
         records.append(Record(zone, reverse_zone, hostname, ip, reverse_ip))
 
     # Generate the additional asset tag mgmt record only if the Netbox name is not the asset tag already
-    if address.interface.name == 'mgmt' and device.name.lower() != device.asset_tag.lower():
+    if address.interface.name == 'mgmt' and (device.name.lower() != device.asset_tag.lower()
+                                             or device.status.label in NETBOX_DEVICE_MGMT_ONLY_STATUSES):
         records.append(Record(zone, reverse_zone, device.asset_tag.lower(), ip, reverse_ip))
 
     return reverse_zone, records
