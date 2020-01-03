@@ -83,6 +83,7 @@ def get_netbox_devices(config: ConfigParser) -> DefaultDict[str, Dict]:
     devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
     api = pynetbox.api(url=config.get('netbox', 'api'), token=config.get('netbox', 'token_ro'))
     addresses = {addr.id: addr for addr in api.ipam.ip_addresses.all()}
+    interfaces = {interface.id: interface for interface in api.dcim.interfaces.all()}
 
     for device in api.dcim.devices.filter(status=list(NETBOX_DEVICE_STATUSES)):
         devices[device.name]['device'] = device
@@ -92,6 +93,7 @@ def get_netbox_devices(config: ConfigParser) -> DefaultDict[str, Dict]:
             devices[device.name]['addresses'].add(addresses[device.primary_ip6.id])
 
     for address in addresses.values():
+        address.interface = interfaces[address.interface.id]
         if address.interface.device.name not in devices:
             logger.warning('Device %s of IP %s not in devices, skipping.', address.interface.device.name, address)
             continue
@@ -165,13 +167,14 @@ def generate_address_records(zone: str, hostname: str, address: pynetbox.models.
             reverse_zone = interface.network.reverse_pointer.replace('/', '-')
 
     records = []
-    if device.status.label not in NETBOX_DEVICE_MGMT_ONLY_STATUSES:
+    if device.status.label not in NETBOX_DEVICE_MGMT_ONLY_STATUSES or device.device_role.slug != 'server':
         # Some states must have only the mgmt record for the asset tag
         records.append(Record(zone, reverse_zone, hostname, ip, reverse_ip))
 
     # Generate the additional asset tag mgmt record only if the Netbox name is not the asset tag already
-    if address.interface.name == 'mgmt' and (device.name.lower() != device.asset_tag.lower()
-                                             or device.status.label in NETBOX_DEVICE_MGMT_ONLY_STATUSES):
+    if (address.interface.mgmt_only and device.device_role.slug == 'server'
+            and (device.name.lower() != device.asset_tag.lower()
+                 or device.status.label in NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
         records.append(Record(zone, reverse_zone, device.asset_tag.lower(), ip, reverse_ip))
 
     return reverse_zone, records
@@ -318,12 +321,13 @@ def main() -> int:
     config.read(args.config)
 
     tmpdir = tempfile.mkdtemp(prefix='dns-snippets-')
+    exit_code = 1
     try:
         exit_code = run(args, config, tmpdir)
 
     except Exception:
         logger.exception('Failed to run')
-        exit_code = 1
+        exit_code = 4
 
     finally:
         if exit_code not in (0, NO_CHANGES_RETURN_CODE):
