@@ -1,15 +1,85 @@
 #!/bin/bash
+# shellcheck disable=SC2162
+#
+# Perform maintenance on sequential dumps of Netbox tables using the dumpbackup.py script.
+# This script keeps a continuous copy of the last 16 immediate backups, and preserves the latest of those
+# which represent a particular day, month and year in an ongoing basis (keeping 60, 12 and 10, respectively).
+#
 
+set -e
+
+# GLOBAL CONFIGURATION
 DUMPPATH=/srv/netbox-dumps
 VENVPYTHON=/srv/deployment/netbox/venv/bin/python
 DUMPSCRIPT=/srv/deployment/netbox-extras/tools/dumpbackup.py
-KEEP=16
+KEEP_HOURLY=16
+KEEP_DAILY=60
+KEEP_MONTHLY=12
+KEEP_YEARLY=10
+#
 
-for dir in $(ls -d $DUMPPATH/20* | sort -h -r | tail -n +$KEEP); do
-    # carefully clean old directories
-    rm -v -f "$dir/*.csv"
-    rm -v -f "$dir/*.json"
-    rmdir -v "$dir"
+# Clean all dumps matching a pattern with a given count
+clean_dumps() {
+    local pattern=$1
+    local keep=$2
+    for dir in $(find "$DUMPPATH" -name "$pattern" -type d | sort -h -r | tail -n +"$keep"); do 
+        # Carefully remove a directory.
+        rm -v -f "$dir"/*.csv
+        rmdir -v "$dir"
+    done
+}
+
+
+# remove old copy of dest and copy curr to it
+do_copy() {
+    local curr=$1;
+    local dest=$2;
+
+    if [ -e "$DUMPPATH/$dest" ]; then
+        rm -v -f "$DUMPPATH/$dest"/*.csv
+        rmdir -v "$DUMPPATH/$dest"
+    fi
+    cp -R --verbose "$DUMPPATH/$curr" "$DUMPPATH/$dest"
+}
+CURRENT=$(date +'%Y-%m-%d-%H:%M')
+
+pushd "$DUMPPATH"
+
+# This is temporary, to fix up existing old backups.
+# Preserve the newest member of non-existant monthly, yearly and daily sets.
+for dir in $(find "$DUMPPATH" -name "20??-??-??-??:??" -type d | sort -h -r); do
+    dir=$(basename "$dir")
+    echo "$dir" | cut -d'-' -f1,2,3 --output-delimiter=' ' | while read year month day; do
+        # fallback in case we don't have old rotation rules
+        if [ ! -e "$DUMPPATH/$year-$month-$day" ]; then
+            cp -R "$DUMPPATH/$dir" "$DUMPPATH/$year-$month-$day"
+        fi
+        if [ ! -e "$DUMPPATH/$year-$month" ]; then
+            cp -R "$DUMPPATH/$dir" "$DUMPPATH/$year-$month"
+        fi
+        if [ ! -e "$DUMPPATH/$year" ]; then
+            cp -R "$DUMPPATH/$dir" "$DUMPPATH/$year"
+        fi
+    done
 done
 
-$VENVPYTHON $DUMPSCRIPT -m "$DUMPPATH/$(date +'%Y-%m-%d-%H:%M')"
+# Clean dumps
+clean_dumps '20??-??-??-??:??' $KEEP_HOURLY
+clean_dumps '20??-??-??' $KEEP_DAILY
+clean_dumps '20??-??' $KEEP_MONTHLY
+clean_dumps '20??' $KEEP_YEARLY
+
+# Dump newest dump for this HOURLY run
+$VENVPYTHON $DUMPSCRIPT -m "$DUMPPATH/$CURRENT"
+
+# Make preservation copies so that the monthly, daily and yearly collections represent
+# the latest hourly run for that period.
+year=$(date +'%Y')
+month=$(date +'%m')
+day=$(date +'%d')
+
+do_copy "$CURRENT" "$year-$month-$day"
+do_copy "$CURRENT" "$year-$month"
+do_copy "$CURRENT" "$year"
+
+popd
