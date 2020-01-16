@@ -30,6 +30,8 @@ EXCLUDE_STATUSES = (
 )
 EXCLUDE_AND_FAILED_STATUSES = EXCLUDE_STATUSES + (DEVICE_STATUS_FAILED,)
 
+VM_BLACKLIST = ('d-i-test',)
+
 
 class PuppetDB(Report):
     description = __doc__
@@ -171,7 +173,7 @@ class PuppetDB(Report):
 
         success = 0
         for vm in vms:
-            if vm.name not in self.puppetdb_devices:
+            if (vm.name not in self.puppetdb_devices) and (vm.name not in VM_BLACKLIST):
                 self.log_failure(vm, "missing VM from PuppetDB")
             elif not self.puppetdb_devices[vm.name]:
                 self.log_failure(vm, "expected VM marked as Physical in PuppetDB")
