@@ -42,7 +42,7 @@ class PuppetDB(Report):
         self.config.read(CONFIG_FILE)
 
         self.puppetdb_serials = self._get_puppetdb_fact("serialnumber")
-        self.puppetdb_devices = self._get_puppetdb_fact("is_virtual")
+        self.puppetdb_isvirtual = self._get_puppetdb_fact("is_virtual")
         self.puppetdb_models = self._get_puppetdb_fact("productname")
         self.device_query = Device.objects.filter(device_role__slug__in=INCLUDE_ROLES, tenant__isnull=True)
 
@@ -74,7 +74,7 @@ class PuppetDB(Report):
         invalid_netbox_devices = self.device_query.filter(status__in=EXCLUDE_STATUSES).values_list("name", flat=True)
 
         success = 0
-        for device, is_virtual in self.puppetdb_devices.items():
+        for device, is_virtual in self.puppetdb_isvirtual.items():
             if is_virtual:
                 continue
 
@@ -97,12 +97,12 @@ class PuppetDB(Report):
         success = 0
 
         for device in devices:
-            if device.name not in self.puppetdb_devices:
+            if device.name not in self.puppetdb_isvirtual:
                 self.log_failure(
                     device,
                     "missing physical device in PuppetDB: state {} in Netbox".format(device.get_status_display()),
                 )
-            elif self.puppetdb_devices[device.name]:
+            elif self.puppetdb_isvirtual[device.name]:
                 self.log_failure(device, "expected physical device marked as virtual in PuppetDB")
             else:
                 success += 1
@@ -155,7 +155,7 @@ class PuppetDB(Report):
         vms = list(VirtualMachine.objects.exclude(status=DEVICE_STATUS_OFFLINE).values_list("name", flat=True))
         success = 0
 
-        for device, is_virtual in self.puppetdb_devices.items():
+        for device, is_virtual in self.puppetdb_isvirtual.items():
             if not is_virtual:
                 continue
 
@@ -173,9 +173,12 @@ class PuppetDB(Report):
 
         success = 0
         for vm in vms:
-            if (vm.name not in self.puppetdb_devices) and (vm.name not in VM_BLACKLIST):
-                self.log_failure(vm, "missing VM from PuppetDB")
-            elif not self.puppetdb_devices[vm.name]:
+            if vm.name not in self.puppetdb_isvirtual:
+                if vm.name in VM_BLACKLIST:
+                    self.log_warning(vm, "missing VM from PuppetDB (blacklisted)")
+                else:
+                    self.log_failure(vm, "missing VM from PuppetDB")
+            elif not self.puppetdb_isvirtual[vm.name]:
                 self.log_failure(vm, "expected VM marked as Physical in PuppetDB")
             else:
                 success += 1
