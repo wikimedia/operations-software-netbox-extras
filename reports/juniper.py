@@ -19,6 +19,12 @@ PRODUCT_NAMES_IGNORE = [
     "QFX-QSFP-40G-SR4",  # optic
     "S-MX104-ADV-R2",  # License
     "S-MX104-UPG-4X10GE",  # License
+    "S-MPCE-NG-ADV-IR",  # License
+    "SRX1500-JSE",  # License
+    "-DAC-",  # DACs
+    "-LIC",  # Licenses
+    "PSU-",  # Power supplies
+    "PWR-",  # More power supplies
 ]
 
 CSVFILE = "/tmp/juniper_installed_base.csv"
@@ -58,16 +64,8 @@ class Juniper(Report):
             if asset["Serial #"] == "":
                 continue
 
-            # Ignore licenses
-            if "-LIC" in asset["Product Name"]:
-                continue
-
-            # Ignore DACs
-            if "-DAC-" in asset["Product Name"]:
-                continue
-
-            # Ignore DACs serials
-            if asset["Product Name"] in PRODUCT_NAMES_IGNORE:
+            # Ignore blacklist items
+            if any(bl in asset["Product Name"] for bl in PRODUCT_NAMES_IGNORE):
                 continue
 
             installed_base[asset["Serial #"]] = asset
@@ -117,6 +115,9 @@ class Juniper(Report):
         device_matches = 0
         for inventory_item in juniper_inventory:
             if inventory_item.serial not in self.installed_base:
+                # Ignore blacklist items
+                if any(bl in inventory_item.part_id for bl in PRODUCT_NAMES_IGNORE):
+                    continue
                 self.log_failure(
                     inventory_item,
                     "{parent_name} item {part_id} with s/n {serial} not present in Juniper Installed Base".format(
