@@ -7,13 +7,7 @@ import requests
 
 from functools import lru_cache
 
-from dcim.constants import (
-    DEVICE_STATUS_DECOMMISSIONING,
-    DEVICE_STATUS_FAILED,
-    DEVICE_STATUS_INVENTORY,
-    DEVICE_STATUS_OFFLINE,
-    DEVICE_STATUS_PLANNED,
-)
+from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 from extras.reports import Report
 from virtualization.models import VirtualMachine
@@ -27,12 +21,12 @@ INCLUDE_ROLES = ("server",)
 
 # statuses that only warn for parity failures
 EXCLUDE_STATUSES = (
-    DEVICE_STATUS_INVENTORY,
-    DEVICE_STATUS_OFFLINE,
-    DEVICE_STATUS_PLANNED,
-    DEVICE_STATUS_DECOMMISSIONING,
+    DeviceStatusChoices.STATUS_INVENTORY,
+    DeviceStatusChoices.STATUS_OFFLINE,
+    DeviceStatusChoices.STATUS_PLANNED,
+    DeviceStatusChoices.STATUS_DECOMMISSIONING,
 )
-EXCLUDE_AND_FAILED_STATUSES = EXCLUDE_STATUSES + (DEVICE_STATUS_FAILED,)
+EXCLUDE_AND_FAILED_STATUSES = EXCLUDE_STATUSES + (DeviceStatusChoices.STATUS_FAILED,)
 DEVICE_QUERY = Device.objects.filter(device_role__slug__in=INCLUDE_ROLES, tenant__isnull=True)
 
 
@@ -62,7 +56,9 @@ class VirtualMachines(Report, PuppetDBDataMixin):
 
     def test_puppetdb_vms_in_netbox(self):
         """Check that all PuppetDB VMs are in Netbox VMs."""
-        vms = list(VirtualMachine.objects.exclude(status=DEVICE_STATUS_OFFLINE).values_list("name", flat=True))
+        vms = list(
+            VirtualMachine.objects.exclude(status=DeviceStatusChoices.STATUS_OFFLINE).values_list("name", flat=True)
+        )
         success = 0
         puppetdb_isvirtual = self._get_puppetdb_fact("is_virtual")
         for device, is_virtual in puppetdb_isvirtual.items():
@@ -79,7 +75,7 @@ class VirtualMachines(Report, PuppetDBDataMixin):
     def test_netbox_vms_in_puppetdb(self):
         """Check that all Netbox VMs are in PuppetDB VMs."""
 
-        vms = VirtualMachine.objects.exclude(status=DEVICE_STATUS_OFFLINE)
+        vms = VirtualMachine.objects.exclude(status=DeviceStatusChoices.STATUS_OFFLINE)
         puppetdb_isvirtual = self._get_puppetdb_fact("is_virtual")
         success = 0
         for vm in vms:

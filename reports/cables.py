@@ -9,21 +9,17 @@ import re
 
 from collections import defaultdict
 
-from dcim.constants import (
-    DEVICE_STATUS_DECOMMISSIONING,
-    DEVICE_STATUS_INVENTORY,
-    DEVICE_STATUS_OFFLINE,
-    DEVICE_STATUS_PLANNED,
-)
+from dcim.choices import DeviceStatusChoices
+
 from dcim.models import Cable, ConsolePort, ConsoleServerPort, Interface, PowerPort, PowerOutlet
 from extras.reports import Report
 
 # these are statuses for devices that we care about
 EXCLUDE_STATUSES = (
-    DEVICE_STATUS_DECOMMISSIONING,
-    DEVICE_STATUS_INVENTORY,
-    DEVICE_STATUS_OFFLINE,
-    DEVICE_STATUS_PLANNED,
+    DeviceStatusChoices.STATUS_DECOMMISSIONING,
+    DeviceStatusChoices.STATUS_INVENTORY,
+    DeviceStatusChoices.STATUS_OFFLINE,
+    DeviceStatusChoices.STATUS_PLANNED,
 )
 
 # For ergonomics the regexps that match interface names are placed in this

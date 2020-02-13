@@ -2,13 +2,7 @@
 Check certain kinds of devices for the presence of a console port.
 """
 
-from dcim.constants import (
-    CONNECTION_STATUS_CONNECTED,
-    DEVICE_STATUS_DECOMMISSIONING,
-    DEVICE_STATUS_INVENTORY,
-    DEVICE_STATUS_OFFLINE,
-    DEVICE_STATUS_PLANNED,
-)
+from dcim.choices import DeviceStatusChoices, CableStatusChoices
 from dcim.models import Device
 from extras.reports import Report
 
@@ -29,10 +23,10 @@ class ManagementConsole(Report):
         for device in (
             Device.objects.exclude(
                 status__in=(
-                    DEVICE_STATUS_INVENTORY,
-                    DEVICE_STATUS_OFFLINE,
-                    DEVICE_STATUS_PLANNED,
-                    DEVICE_STATUS_DECOMMISSIONING,
+                    DeviceStatusChoices.STATUS_INVENTORY,
+                    DeviceStatusChoices.STATUS_OFFLINE,
+                    DeviceStatusChoices.STATUS_PLANNED,
+                    DeviceStatusChoices.STATUS_DECOMMISSIONING,
                 )
             )
             .filter(device_role__slug__in=DEVICE_ROLES)
@@ -45,7 +39,7 @@ class ManagementConsole(Report):
                 continue
 
             for port in ports:
-                if port.connection_status == CONNECTION_STATUS_CONNECTED:
+                if port.connection_status == CableStatusChoices.STATUS_CONNECTED:
                     successcount += 1
                     break
             else:

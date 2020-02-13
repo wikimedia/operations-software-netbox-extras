@@ -7,12 +7,12 @@ And the other way around.
 import csv
 from collections import OrderedDict
 
-from dcim.constants import DEVICE_STATUS_DECOMMISSIONING, DEVICE_STATUS_OFFLINE
+from dcim.choices import DeviceStatusChoices
 from dcim.models import Device, InventoryItem
 from extras.reports import Report
 
 # Status we are fine not having support on
-STATUS_IGNORE = (DEVICE_STATUS_OFFLINE, DEVICE_STATUS_DECOMMISSIONING)
+STATUS_IGNORE = (DeviceStatusChoices.STATUS_OFFLINE, DeviceStatusChoices.STATUS_DECOMMISSIONING)
 
 PRODUCT_NAMES_IGNORE = [
     "JNP-QSFP-40G-LX4",  # optic

@@ -2,9 +2,9 @@ import ipaddress
 
 from django.core.exceptions import ObjectDoesNotExist
 
-from dcim.constants import IFACE_TYPE_1GE_FIXED
+from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
-from ipam.constants import IPADDRESS_STATUS_ACTIVE
+from ipam.choices import IPAddressStatusChoices
 from ipam.models import Prefix, IPAddress
 from extras.scripts import Script, ObjectVar, BooleanVar
 
@@ -53,7 +53,7 @@ class CreateManagementInterface(Script):
             # create IP address as child of appropriate prefix
             newip = IPAddress(
                 address="{}/{}".format(ip, prefix.prefix.prefixlen),
-                status=IPADDRESS_STATUS_ACTIVE,
+                status=IPAddressStatusChoices.STATUS_ACTIVE,
                 family=prefix.family,
             )
             # save ASAP
@@ -82,7 +82,7 @@ class CreateManagementInterface(Script):
             self.log_info("mgmt already exists for device {}".format(device.name))
         except ObjectDoesNotExist:
             # create interface of name mgmt, is_mgmt flag set of type 1G Ethernet
-            mgmt = Interface(name="mgmt", mgmt_only=True, device=device, type=IFACE_TYPE_1GE_FIXED)
+            mgmt = Interface(name="mgmt", mgmt_only=True, device=device, type=InterfaceTypeChoices.TYPE_1GE_FIXED)
             mgmt.save()
 
         if data['add_ip']:

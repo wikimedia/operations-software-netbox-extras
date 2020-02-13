@@ -7,14 +7,14 @@ import pymysql
 
 from django.db.models import Q
 
-from dcim.constants import DEVICE_STATUS_ACTIVE, DEVICE_STATUS_STAGED
+from dcim.choices import DeviceStatusChoices
 from dcim.models import Device, InventoryItem
 from extras.reports import Report
 
 CONFIG_FILE = "/etc/netbox/reports.cfg"
 
 # Netbox system states to check.
-INCLUDE_STATUSES = (DEVICE_STATUS_ACTIVE, DEVICE_STATUS_STAGED)
+INCLUDE_STATUSES = (DeviceStatusChoices.STATUS_ACTIVE, DeviceStatusChoices.STATUS_STAGED)
 
 # Netbox roles to check (slugs)
 # These are checked against the devices we get from LibreNMS

@@ -5,13 +5,7 @@ Several integrity/coherence checks against the data.
 import datetime
 import re
 
-from dcim.constants import (
-    DEVICE_STATUS_ACTIVE,
-    DEVICE_STATUS_DECOMMISSIONING,
-    DEVICE_STATUS_OFFLINE,
-    DEVICE_STATUS_PLANNED,
-    DEVICE_STATUS_INVENTORY,
-)
+from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 from extras.reports import Report
 from extras.models import CustomFieldValue
@@ -88,7 +82,7 @@ class Coherence(Report):
             _get_devices_query()
             .values("serial")
             .exclude(device_role__slug__in=DEVICE_ROLE_BLACKLIST)
-            .exclude(status__in=(DEVICE_STATUS_DECOMMISSIONING, DEVICE_STATUS_OFFLINE))
+            .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
             .exclude(serial="")
             .exclude(serial__isnull=True)
             .annotate(count=Count("pk"))
@@ -100,7 +94,7 @@ class Coherence(Report):
         if dups:
             for device in (
                 _get_devices_query()
-                .exclude(status__in=(DEVICE_STATUS_DECOMMISSIONING, DEVICE_STATUS_OFFLINE))
+                .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
                 .filter(serial__in=list(dups))
                 .order_by("serial")
             ):
@@ -113,7 +107,7 @@ class Coherence(Report):
         success_count = 0
         for device in (
             _get_devices_query()
-            .exclude(status__in=(DEVICE_STATUS_DECOMMISSIONING, DEVICE_STATUS_OFFLINE))
+            .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
             .exclude(device_role__slug__in=DEVICE_ROLE_BLACKLIST)
         ):
             if device.serial is None or device.serial == "":
@@ -138,7 +132,7 @@ class Coherence(Report):
 
     def test_offline_rack(self):
         """Determine if offline boxes are (erroneously) assigned a rack."""
-        devices = _get_devices_query().filter(status=DEVICE_STATUS_OFFLINE).exclude(rack=None)
+        devices = _get_devices_query().filter(status=DeviceStatusChoices.STATUS_OFFLINE).exclude(rack=None)
         devices = devices.select_related("site", "rack")
         for device in devices:
             self.log_failure(
@@ -152,7 +146,13 @@ class Coherence(Report):
         """Determine if online boxes are (erroneously) lacking a rack assignment."""
         for device in (
             _get_devices_query()
-            .exclude(status__in=(DEVICE_STATUS_OFFLINE, DEVICE_STATUS_PLANNED, DEVICE_STATUS_INVENTORY))
+            .exclude(
+                status__in=(
+                    DeviceStatusChoices.STATUS_OFFLINE,
+                    DeviceStatusChoices.STATUS_PLANNED,
+                    DeviceStatusChoices.STATUS_INVENTORY,
+                )
+            )
             .filter(rack=None)
         ):
             self.log_failure(device, "no rack defined for status {} device".format(device.get_status_display()))
@@ -176,7 +176,7 @@ class Coherence(Report):
         warnings = []
         for device in _get_devices_query():
             if device.name.lower() != device.name:
-                if device.status == DEVICE_STATUS_ACTIVE:
+                if device.status == DeviceStatusChoices.STATUS_ACTIVE:
                     self.log_failure(device, "malformed device name for active device")
                 else:
                     warnings.append(device)
