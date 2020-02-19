@@ -2,7 +2,7 @@
 Check certain kinds of devices for the presence of a console port.
 """
 
-from dcim.choices import DeviceStatusChoices, CableStatusChoices
+from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 from extras.reports import Report
 
@@ -39,7 +39,7 @@ class ManagementConsole(Report):
                 continue
 
             for port in ports:
-                if port.connection_status == CableStatusChoices.STATUS_CONNECTED:
+                if port.connection_status:
                     successcount += 1
                     break
             else:
