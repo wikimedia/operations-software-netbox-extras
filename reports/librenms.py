@@ -1,9 +1,10 @@
 """
 Report parity errors between LibreNMS and Netbox.
 """
-
 import configparser
 import pymysql
+
+from functools import lru_cache
 
 from django.db.models import Q
 
@@ -127,18 +128,19 @@ class LibreNMS(Report):
     description = __doc__
 
     def __init__(self, *args, **kwargs):
+        self._device_query = Device.objects.filter(status__in=INCLUDE_STATUSES)
+        super().__init__(*args, **kwargs)
+
+    @property
+    @lru_cache(maxsize=None)
+    def librenms(self):
         """Load the data from the endpoint as needed by the reports."""
         configfile = configparser.ConfigParser()
         configfile.read(CONFIG_FILE)
         config = configfile["librenms"]
-
-        self._device_query = Device.objects.filter(status__in=INCLUDE_STATUSES)
-
-        self._librenms = LibreNMSData(
+        return LibreNMSData(
             config["dbhost"], config["dbport"], config["user"], config["password"], config["database"]
         )
-
-        super().__init__(*args, **kwargs)
 
     def test_nb_net_in_librenms(self):
         """Check that every Device in the asw, pfw, msw, and cr classes in Netbox are `devices` in LibreNMS,
@@ -159,9 +161,9 @@ class LibreNMS(Report):
             .exclude(serial__exact="")
             .exclude(DEVICE_EXCLUDES)
         ):
-            if (dev.serial in self._librenms.devices) or (
+            if (dev.serial in self.librenms.devices) or (
                 (dev.device_type.manufacturer.slug in INVENTORY_MANUFACTURERS)
-                and (dev.serial in self._librenms.inventory)
+                and (dev.serial in self.librenms.inventory)
             ):
                 success += 1
             elif dev.site.slug not in EXCLUDE_SITES:
@@ -181,7 +183,7 @@ class LibreNMS(Report):
             .exclude(INVENTORY_EXCLUDES)
         ):
             if (
-                inventory_item.serial not in self._librenms.inventory
+                inventory_item.serial not in self.librenms.inventory
                 and inventory_item.device.site.slug not in EXCLUDE_SITES
             ):
                 self.log_failure(inventory_item, "missing Netbox inventory item from LibreNMS")
@@ -196,7 +198,7 @@ class LibreNMS(Report):
         devserials = self._device_query.filter(device_role__slug__in=INCLUDE_DEVICE_ROLES_LNMS_CHECK).values_list(
             "serial", flat=True
         )
-        for serial, device in self._librenms.devices.items():
+        for serial, device in self.librenms.devices.items():
             if serial not in devserials:
                 self.log_failure(
                     None,
@@ -225,13 +227,13 @@ class LibreNMS(Report):
             nb_model_string = str(device.device_type.model).lower()
             nb_vendor_model_string = " ".join((nb_vendor_string, nb_model_string))
             # Either the hardware or description has both the vendor and the model, discretely.
-            if device.serial in self._librenms.devices:
+            if device.serial in self.librenms.devices:
                 if (
-                    nb_vendor_string in self._librenms.devices[device.serial]["hardware"]
-                    or nb_vendor_string in self._librenms.devices[device.serial]["description"]
+                    nb_vendor_string in self.librenms.devices[device.serial]["hardware"]
+                    or nb_vendor_string in self.librenms.devices[device.serial]["description"]
                 ) and (
-                    nb_model_string in self._librenms.devices[device.serial]["hardware"]
-                    or nb_model_string in self._librenms.devices[device.serial]["description"]
+                    nb_model_string in self.librenms.devices[device.serial]["hardware"]
+                    or nb_model_string in self.librenms.devices[device.serial]["description"]
                 ):
                     success += 1
                 elif device.site.slug not in EXCLUDE_SITES:
@@ -242,15 +244,15 @@ class LibreNMS(Report):
                             "LibreNMS devtype={} || {}"
                         ).format(
                             nb_vendor_model_string,
-                            self._librenms.devices[device.serial]["description"],
-                            self._librenms.devices[device.serial]["hardware"],
+                            self.librenms.devices[device.serial]["description"],
+                            self.librenms.devices[device.serial]["hardware"],
                         ),
                     )
-            elif device.serial in self._librenms.inventory:
+            elif device.serial in self.librenms.inventory:
                 librenms_vendor_model_string = (
-                    self._librenms.inventory[device.serial]["vendor"]
+                    self.librenms.inventory[device.serial]["vendor"]
                     + " "
-                    + self._librenms.inventory[device.serial]["model"]
+                    + self.librenms.inventory[device.serial]["model"]
                 )
                 if (
                     nb_vendor_model_string in librenms_vendor_model_string
