@@ -163,8 +163,7 @@ class Juniper(Report):
                     inventory_items[serial]
                     is_inventory_item = True
                 except KeyError:
-
-                    self.log_failure(
+                    self.log_warning(
                         None, "Device {name} with s/n {serial} not present in Netbox".format(name=name, serial=serial)
                     )
                     continue
