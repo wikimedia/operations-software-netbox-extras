@@ -9,6 +9,7 @@ Requires google-api-python-client and google-auth-oauthlib.
 import configparser
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 
 from dcim.models import Device
 from extras.reports import Report
@@ -25,16 +26,16 @@ class Accounting(Report):
     Asset Tags spreadsheet.
     """
 
-    def __init__(self, *args, **kwargs):
-        """Loads the config file and initializes the Google Sheets API."""
+    @property
+    @lru_cache(maxsize=None)
+    def assets(self):
+        """Get the configuration and then asset list from the Google sheet."""
         config = configparser.ConfigParser(interpolation=None)
         config.read(CONFIG_FILE)
 
-        self.assets = self.get_assets_from_accounting(
-            config["service-credentials"], config["accounting"]["sheet_id"], config["accounting"]["range"]
+        return self.get_assets_from_accounting(
+            config["service-credentials"], config["accounting"]["sheet_id"], config["accounting"]["range"],
         )
-
-        super().__init__(*args, **kwargs)
 
     @staticmethod
     def get_assets_from_accounting(creds, sheet_id, range):
