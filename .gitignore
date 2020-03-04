@@ -1,4 +1,6 @@
-.mypy_cache/
-.tox/
+/.dns_output/
+/.mypy_cache/
+/.tox/
+/dns/config.ini
 *~
 *.pyc
