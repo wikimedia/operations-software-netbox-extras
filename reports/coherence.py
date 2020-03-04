@@ -6,7 +6,7 @@ import datetime
 import re
 
 from dcim.choices import DeviceStatusChoices
-from dcim.models import Device
+from dcim.models import Device, InventoryItem
 from extras.reports import Report
 from extras.models import CustomFieldValue
 
@@ -17,6 +17,12 @@ SITE_BLACKLIST = ()
 DEVICE_ROLE_BLACKLIST = ("cablemgmt", "storagebin", "optical-device")
 ASSET_TAG_RE = re.compile(r"WMF\d{4}")
 TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
+JUNIPER_INVENTORY_PART_EXCLUDES = [
+    "EX4500-VC1-128G",
+    "EX4500-LB",
+    "EX-UM-2X4SFP",
+]
+JUNIPER_INVENTORY_DESC_RE = re.compile(r".*Purchase:\d{4}-\d{2}-\d{2},Task:(T\d{6}|RT #\d+).*")
 
 
 def cf(device, field):
@@ -185,3 +191,17 @@ class Coherence(Report):
 
         [self.log_warning(x, "malformed device name for inactive device") for x in warnings]
         self.log_success(None, "{} correctly formatted device names".format(success))
+
+    def test_juniper_inventory_descs(self):
+        """Juniper inventory items which are not power supplies should have a structured description."""
+        success = 0
+        for inv in (
+            InventoryItem.objects.filter(manufacturer__slug='juniper')
+            .exclude(name__startswith='Power Supply')
+            .exclude(part_id__in=JUNIPER_INVENTORY_PART_EXCLUDES)
+        ):
+            if JUNIPER_INVENTORY_DESC_RE.match(inv.description):
+                success += 1
+            else:
+                self.log_failure(inv, "malformed inventory description: {}".format(inv.description))
+        self.log_success(None, "{} correctly formatted inventory descriptions.".format(success))
