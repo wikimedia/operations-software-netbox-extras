@@ -2,7 +2,6 @@
 """Generate DNS zonefile snippets with records from Netbox to be included in zonefiles.
 
 Todo:
-    * For IPv4 sub /24 netmasks, get the largest one from Netbox instead of that of the interface.
     * Support a two-phase push to integrate with a cookbook.
     * Investigate dnspython instead of doing non-abstract string manipulations.
 
@@ -19,8 +18,9 @@ import tempfile
 from abc import abstractmethod
 from collections import defaultdict
 from configparser import ConfigParser
+from operator import attrgetter
 from pathlib import Path
-from typing import DefaultDict, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import DefaultDict, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import git
 import pynetbox
@@ -92,12 +92,14 @@ class Netbox:
         self.devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
         self.addresses = {}  # type: dict
         self.interfaces = {}  # type: dict
+        self.prefixes = set()  # type: Set
 
     def collect(self) -> None:
         """Collect all the data from Netbox. Must be called before using the class."""
-        logger.info('Gathering devices, interfaces and addresses from Netbox')
+        logger.info('Gathering devices, interfaces, addresses and prefixes from Netbox')
         self.addresses = {addr.id: addr for addr in self.api.ipam.ip_addresses.all()}
         self.interfaces = {interface.id: interface for interface in self.api.dcim.interfaces.all()}
+        self.prefixes = {ipaddress.ip_network(prefix.prefix) for prefix in self.api.ipam.prefixes.all()}
 
         for device in self.api.dcim.devices.filter(status=Netbox.NETBOX_DEVICE_STATUSES):
             self.devices[device.name]['device'] = device
@@ -233,8 +235,11 @@ class ForwardRecord(RecordBase):
         """
         return ('.'.join(self.hostname.split('.')[::-1]), self.ip.exploded)
 
-    def get_reverse(self) -> ReverseRecord:
+    def get_reverse(self, prefixes: Set) -> ReverseRecord:
         """Return the reverse record of the current object.
+
+        Arguments:
+            prefixes (set): the set of available prefixes from Netbox.
 
         Returns:
             ReverseRecord: the reverse record object.
@@ -250,7 +255,11 @@ class ForwardRecord(RecordBase):
             # as separator for the netmask instead of the slash '/'.
             pointer, zone = self.ip.reverse_pointer.split('.', 1)
             if self.interface.network.prefixlen > 24:
-                zone = self.interface.network.reverse_pointer.replace('/', '-')
+                max_prefix = max([prefix for prefix in prefixes if self.ip in prefix], key=attrgetter('prefixlen'))
+                if max_prefix.prefixlen > 24:
+                    zone = max_prefix.reverse_pointer.replace('/', '-')
+                else:
+                    zone = max_prefix.network_address.reverse_pointer
 
         return ReverseRecord(zone, '.'.join((self.hostname, self.zone)), str(self.interface), pointer)
 
@@ -281,7 +290,7 @@ class Records:
                 records_count += len(records)
                 for record in records:
                     self.zones['direct'][zone].append(record)
-                    reverse = record.get_reverse()
+                    reverse = record.get_reverse(self.netbox.prefixes)
                     self.zones['reverse'][reverse.zone].append(reverse)
 
         logger.info('Generated %d direct and reverse records (%d each) in %d direct zones and %d reverse zones',
