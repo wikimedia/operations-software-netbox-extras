@@ -30,8 +30,6 @@ from git.util import get_user_id
 logger = logging.getLogger()
 GIT_USER_NAME = 'generate-dns-snippets'
 GIT_USER_EMAIL = 'noc@wikimedia.org'
-NETBOX_DEVICE_STATUSES = ('active', 'planned', 'staged', 'failed', 'inventory', 'decommissioning',)
-NETBOX_DEVICE_MGMT_ONLY_STATUSES = ('inventory', 'decommissioning')
 DIRECT_LJUST_LEN = 40  # Fixed justification to avoid large diffs
 NO_CHANGES_RETURN_CODE = 99
 WARNING_PERCENTAGE_LINES_CHANGED = 3
@@ -77,35 +75,51 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def get_netbox_devices(config: ConfigParser) -> DefaultDict[str, Dict]:
-    """Get the DNS records to generate from Netbox."""
-    logger.info('Gathering devices, interfaces and addresses from Netbox')
-    devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
-    api = pynetbox.api(url=config.get('netbox', 'api'), token=config.get('netbox', 'token_ro'))
-    addresses = {addr.id: addr for addr in api.ipam.ip_addresses.all()}
-    interfaces = {interface.id: interface for interface in api.dcim.interfaces.all()}
+class Netbox:
+    """Class to manage all data from Netbox."""
 
-    for device in api.dcim.devices.filter(status=list(NETBOX_DEVICE_STATUSES)):
-        devices[device.name]['device'] = device
-        if device.primary_ip4 is not None:
-            devices[device.name]['addresses'].add(addresses[device.primary_ip4.id])
-        if device.primary_ip6 is not None:
-            devices[device.name]['addresses'].add(addresses[device.primary_ip6.id])
+    NETBOX_DEVICE_STATUSES = ('active', 'planned', 'staged', 'failed', 'inventory', 'decommissioning',)
+    NETBOX_DEVICE_MGMT_ONLY_STATUSES = ('inventory', 'decommissioning')
 
-    for address in addresses.values():
-        address.interface = interfaces[address.interface.id]
-        if address.interface.device.name not in devices:
-            logger.warning('Device %s of IP %s not in devices, skipping.', address.interface.device.name, address)
-            continue
+    def __init__(self, url: str, token: str):
+        """Initialize the instance.
 
-        if not address.dns_name:
-            logger.warning('%s:%s has no DNS name', address.interface.device.name, address.interface.name)
-            continue
+        Arguments:
+            url (str): the Netbox API URL.
+            token (str): the Netbox API token.
 
-        devices[address.interface.device.name]['addresses'].add(address)
+        """
+        self.api = pynetbox.api(url=url, token=token)
+        self.devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
+        self.addresses = {}  # type: dict
+        self.interfaces = {}  # type: dict
 
-    logger.info('Gathered %d devices from Netbox', len(devices))
-    return devices
+    def collect(self) -> None:
+        """Collect all the data from Netbox. Must be called before using the class."""
+        logger.info('Gathering devices, interfaces and addresses from Netbox')
+        self.addresses = {addr.id: addr for addr in self.api.ipam.ip_addresses.all()}
+        self.interfaces = {interface.id: interface for interface in self.api.dcim.interfaces.all()}
+
+        for device in self.api.dcim.devices.filter(status=Netbox.NETBOX_DEVICE_STATUSES):
+            self.devices[device.name]['device'] = device
+            if device.primary_ip4 is not None:
+                self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip4.id])
+            if device.primary_ip6 is not None:
+                self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip6.id])
+
+        for address in self.addresses.values():
+            address.interface = self.interfaces[address.interface.id]
+            if address.interface.device.name not in self.devices:
+                logger.warning('Device %s of IP %s not in devices, skipping.', address.interface.device.name, address)
+                continue
+
+            if not address.dns_name:
+                logger.warning('%s:%s has no DNS name', address.interface.device.name, address.interface.name)
+                continue
+
+            self.devices[address.interface.device.name]['addresses'].add(address)
+
+        logger.info('Gathered %d devices from Netbox', len(self.devices))
 
 
 def split_dns_name(dns_name: str) -> Tuple[str, str]:
@@ -167,14 +181,14 @@ def generate_address_records(zone: str, hostname: str, address: pynetbox.models.
             reverse_zone = interface.network.reverse_pointer.replace('/', '-')
 
     records = []
-    if device.status.value not in NETBOX_DEVICE_MGMT_ONLY_STATUSES or device.device_role.slug != 'server':
+    if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES or device.device_role.slug != 'server':
         # Some states must have only the mgmt record for the asset tag
         records.append(Record(zone, reverse_zone, hostname, ip, reverse_ip))
 
     # Generate the additional asset tag mgmt record only if the Netbox name is not the asset tag already
     if (address.interface.mgmt_only and device.device_role.slug == 'server'
             and (device.name.lower() != device.asset_tag.lower()
-                 or device.status.value in NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
+                 or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
         records.append(Record(zone, reverse_zone, device.asset_tag.lower(), ip, reverse_ip))
 
     return reverse_zone, records
@@ -272,8 +286,9 @@ def validate(files: int, lines: int, delta: Mapping[str, int]) -> None:
 
 def run(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> int:
     """Generate and commit the DNS snippets."""
-    devices = get_netbox_devices(config)
-    records = generate_records(devices, config.getint('dns_snippets', 'min_records'))
+    netbox = Netbox(config.get('netbox', 'api'), config.get('netbox', 'token_ro'))
+    netbox.collect()
+    records = generate_records(netbox.devices, config.getint('dns_snippets', 'min_records'))
     working_repo = setup_repo(config, tmpdir)
     files, lines = get_file_stats(tmpdir)
     working_repo.git.rm('.', r=True, ignore_unmatch=True)  # Delete all existing files to ensure removal of stale files
