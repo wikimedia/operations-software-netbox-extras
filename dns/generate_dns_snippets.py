@@ -16,10 +16,11 @@ import shutil
 import sys
 import tempfile
 
-from collections import defaultdict, namedtuple
+from abc import abstractmethod
+from collections import defaultdict
 from configparser import ConfigParser
 from pathlib import Path
-from typing import DefaultDict, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple
+from typing import DefaultDict, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import git
 import pynetbox
@@ -30,13 +31,11 @@ from git.util import get_user_id
 logger = logging.getLogger()
 GIT_USER_NAME = 'generate-dns-snippets'
 GIT_USER_EMAIL = 'noc@wikimedia.org'
-DIRECT_LJUST_LEN = 40  # Fixed justification to avoid large diffs
 NO_CHANGES_RETURN_CODE = 99
 WARNING_PERCENTAGE_LINES_CHANGED = 3
 ERROR_PERCENTAGE_LINES_CHANGED = 5
 WARNING_PERCENTAGE_FILES_CHANGED = 8
 ERROR_PERCENTAGE_FILES_CHANGED = 15
-Record = namedtuple('Record', ('zone', 'reverse_zone', 'hostname', 'ip', 'reverse_ip'))
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -122,76 +121,242 @@ class Netbox:
         logger.info('Gathered %d devices from Netbox', len(self.devices))
 
 
-def split_dns_name(dns_name: str) -> Tuple[str, str]:
-    """Given a FQDN split it into hostname and zone."""
-    parts = dns_name.strip().split('.')
-    max_len = 2
-    if 'frack' in parts:
-        max_len += 1
-    if 'mgmt' in parts:
-        max_len += 1
+class RecordBase:
+    """Class to represent a base DNS record."""
 
-    split_len = min(len(parts) - 1, max_len)
-    hostname = '.'.join(parts[:-split_len])
-    zone = '.'.join(parts[-split_len:])
+    def __init__(self, zone: str, hostname: str, ip_interface: str):
+        """Initialize the instance.
 
-    return hostname, zone
+        Arguments:
+            zone (str): the zone name.
+            hostname (str): the hostname.
+            ip_interface (str): the IP interface as returned by Netbox (e.g. 10.0.0.1/24).
+
+        """
+        self.zone = zone
+        self.hostname = hostname
+        self.interface = ipaddress.ip_interface(ip_interface)
+        self.ip = self.interface.ip
+
+    def __eq__(self, other: object) -> bool:
+        """Equality operator.
+
+        Params:
+            According to Python's data model:
+            https://docs.python.org/3/reference/datamodel.html?highlight=__lt__#object.__eq__
+
+        """
+        if not isinstance(other, RecordBase):
+            return NotImplemented
+
+        return self.zone == other.zone and self.hostname == other.hostname and self.ip == other.ip
+
+    def __lt__(self, other: object) -> bool:
+        """Less than operator.
+
+        Params:
+            According to Python's data model:
+            https://docs.python.org/3/reference/datamodel.html?highlight=__lt__#object.__lt__
+
+        """
+        if not isinstance(other, RecordBase):
+            return NotImplemented
+
+        return self.to_tuple() < other.to_tuple()
+
+    @abstractmethod
+    def to_tuple(self) -> Tuple:
+        """Tuple representatin suitable to be used for sorting records.
+
+        Returns:
+            tuple: the tuple representation.
+
+        """
 
 
-def generate_records(devices: Mapping, min_records: int) -> Dict[str, DefaultDict[str, List[Record]]]:
-    """Generate direct and reverse records based on Netbox data."""
-    logger.info('Generating DNS records')
-    records = {'direct': defaultdict(list), 'reverse': defaultdict(list)}  # type: Dict
-    records_count = 0
-    for name, device_data in devices.items():
-        for address in device_data['addresses']:
-            hostname, zone = split_dns_name(address.dns_name)
-            reverse_zone, record_objects = generate_address_records(zone, hostname, address, device_data['device'])
-            if record_objects:
-                records['direct'][zone].extend(record_objects)
-                records['reverse'][reverse_zone].extend(record_objects)
-                records_count += len(record_objects)
+class ReverseRecord(RecordBase):
+    """Class to represent a reverse DNS record."""
 
-    logger.info('Generated %d direct and reverse records (%d each) in %d direct zones and %d reverse zones',
-                records_count * 2, records_count, len(records['direct']), len(records['reverse']))
+    def __init__(self, zone: str, hostname: str, ip_interface: str, pointer: str):
+        """Initialize the instance.
 
-    if records_count < min_records:
-        logger.error(
-            'CAUTION: the generated records are less than the minimum limit of %d. Check the diff!', min_records)
+        Arguments:
+            zone (str): the zone name.
+            hostname (str): the hostname.
+            ip_interface (str): the IP interface as returned by Netbox (e.g. 10.0.0.1/24).
+            pointer (str): the part of the reverse pointer without the zone to use as key in the record.
 
-    return records
+        """
+        super().__init__(zone, hostname, ip_interface)
+        self.pointer = pointer
+
+    def __str__(self) -> str:
+        """String representation in DNS zonefile format of the record.
+
+        Returns:
+            str: the object representation.
+
+        """
+        return '{ptr} 1H IN PTR {hostname}.'.format(ptr=self.pointer.ljust(3), hostname=self.hostname)
+
+    def to_tuple(self) -> Tuple:
+        """Tuple representatin suitable to be used for sorting records.
+
+        Returns:
+            tuple: the tuple representation.
+
+        """
+        return tuple([int(i) for i in self.pointer.split('.')] + [self.hostname])  # type: ignore
 
 
-def generate_address_records(zone: str, hostname: str, address: pynetbox.models.ipam.IpAddresses,
-                             device: pynetbox.models.dcim.Devices) -> Tuple[str, List[Record]]:
-    """Generate Record objects for the given address."""
-    interface = ipaddress.ip_interface(address.address)
-    ip = interface.ip
-    if ip.version == 6:  # For IPv6 PTRs we always split the zone at /64 and write the last 16 nibbles
-        reverse_parts = ip.reverse_pointer.split('.')
-        reverse_ip = '.'.join(reverse_parts[:16])
-        reverse_zone = '.'.join(reverse_parts[16:])
-    else:
-        # For IPv4 PTRs we always write the last octet and by default split at the /24 boundary.
-        # For non-octet boundary sub-24 netmasks RFC 2317 suggestions are followed, using the hyphen '-'
-        # as separator for the netmask instead of the slash '/'.
-        reverse_ip, reverse_zone = ip.reverse_pointer.split('.', 1)
-        netmask = int(address.address.split('/')[1])
-        if netmask > 24:
-            reverse_zone = interface.network.reverse_pointer.replace('/', '-')
+class ForwardRecord(RecordBase):
+    """Class to represent a forward DNS record."""
 
-    records = []
-    if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES or device.device_role.slug != 'server':
-        # Some states must have only the mgmt record for the asset tag
-        records.append(Record(zone, reverse_zone, hostname, ip, reverse_ip))
+    def __str__(self) -> str:
+        """String representation in DNS zonefile format of the record.
 
-    # Generate the additional asset tag mgmt record only if the Netbox name is not the asset tag already
-    if (address.interface.mgmt_only and device.device_role.slug == 'server'
-            and (device.name.lower() != device.asset_tag.lower()
-                 or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
-        records.append(Record(zone, reverse_zone, device.asset_tag.lower(), ip, reverse_ip))
+        Returns:
+            str: the object representation.
 
-    return reverse_zone, records
+        """
+        record_type = 'AAAA' if self.ip.version == 6 else 'A'
+        # Fixed justification to avoid large diffs
+        return '{hostname} 1H IN {type} {ip}'.format(
+            hostname=self.hostname.ljust(40), type=record_type, ip=self.ip.compressed)
+
+    def to_tuple(self) -> Tuple:
+        """Tuple representatin suitable to be used for sorting records.
+
+        Returns:
+            tuple: the tuple representation.
+
+        """
+        return ('.'.join(self.hostname.split('.')[::-1]), self.ip.exploded)
+
+    def get_reverse(self) -> ReverseRecord:
+        """Return the reverse record of the current object.
+
+        Returns:
+            ReverseRecord: the reverse record object.
+
+        """
+        if self.ip.version == 6:  # For IPv6 PTRs we always split the zone at /64 and write the last 16 nibbles
+            parts = self.ip.reverse_pointer.split('.')
+            pointer = '.'.join(parts[:16])
+            zone = '.'.join(parts[16:])
+        else:
+            # For IPv4 PTRs we always write the last octet and by default split at the /24 boundary.
+            # For non-octet boundary sub-24 netmasks RFC 2317 suggestions are followed, using the hyphen '-'
+            # as separator for the netmask instead of the slash '/'.
+            pointer, zone = self.ip.reverse_pointer.split('.', 1)
+            if self.interface.network.prefixlen > 24:
+                zone = self.interface.network.reverse_pointer.replace('/', '-')
+
+        return ReverseRecord(zone, '.'.join((self.hostname, self.zone)), str(self.interface), pointer)
+
+
+class Records:
+    """Class to represent all the DNS records."""
+
+    def __init__(self, netbox: Netbox, min_records: int):
+        """Initialize the instance.
+
+        Arguments:
+            netbox (Netbox): the Netbox instance.
+            min_records (int): the minimum number of records that should be created, as a safety precaution.
+
+        """
+        self.netbox = netbox
+        self.min_records = min_records
+        self.zones = {'direct': defaultdict(list), 'reverse': defaultdict(list)}  # type: Dict
+
+    def generate(self) -> None:
+        """Generate all DNS record based on Netbox data."""
+        logger.info('Generating DNS records')
+        records_count = 0
+        for name, device_data in self.netbox.devices.items():
+            for address in device_data['addresses']:
+                hostname, zone = Records._split_dns_name(address.dns_name)
+                records = Records._generate_address_records(zone, hostname, address, device_data['device'])
+                records_count += len(records)
+                for record in records:
+                    self.zones['direct'][zone].append(record)
+                    reverse = record.get_reverse()
+                    self.zones['reverse'][reverse.zone].append(reverse)
+
+        logger.info('Generated %d direct and reverse records (%d each) in %d direct zones and %d reverse zones',
+                    records_count * 2, records_count, len(self.zones['direct']), len(self.zones['reverse']))
+
+        if records_count < self.min_records:
+            logger.error('CAUTION: the generated records are less than the minimum limit of %d. Check the diff!',
+                         self.min_records)
+
+    def write_snippets(self, destination: str) -> None:
+        """Write the DNS zone snippet files into the destination directory.
+
+        Arguments:
+            destination (str): path where to save the snippet files.
+
+        """
+        logger.info('Generating zonefile snippets to directory %s', destination)
+        for record_type, zones in self.zones.items():
+            for zone, zone_records in zones.items():
+                with open(os.path.join(destination, zone), 'w') as zonefile:
+                    for record in sorted(zone_records):
+                        zonefile.write(str(record) + '\n')
+
+                logger.debug('Wrote %d %s records in %s zonefile', len(zone_records), record_type, zone)
+
+    @staticmethod
+    def _generate_address_records(zone: str, hostname: str, address: pynetbox.models.ipam.IpAddresses,
+                                  device: pynetbox.models.dcim.Devices) -> List[ForwardRecord]:
+        """Generate Record objects for the given address.
+
+        Arguments:
+            zone (str): the zone name.
+            address (pynetbox.models.ipam.IpAddresses): the Netbox address to use to generate the record.
+            device (pynetbox.models.dcim.Devices): the Netbox device the address belongs to.
+
+        Returns:
+            list: a list of ForwardRecord objects related to the given address.
+
+        """
+        records = []
+        if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES or device.device_role.slug != 'server':
+            # Some states must have only the mgmt record for the asset tag
+            records.append(ForwardRecord(zone, hostname, address.address))
+
+        # Generate the additional asset tag mgmt record only if the Netbox name is not the asset tag already
+        if (address.interface.mgmt_only and device.device_role.slug == 'server'
+                and (device.name.lower() != device.asset_tag.lower()
+                     or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
+            records.append(ForwardRecord(zone, device.asset_tag.lower(), address.address))
+
+        return records
+
+    @staticmethod
+    def _split_dns_name(dns_name: str) -> Tuple[str, str]:
+        """Given a FQDN split it into hostname and zone.
+
+        Arguments:
+            dns_name (str): the FQDN to split.
+
+        Returns:
+            tuple: a 2-elements tuple with the hostname and the zone name.
+
+        """
+        parts = dns_name.strip().split('.')
+        max_len = 2
+        if 'frack' in parts:
+            max_len += 1
+        if 'mgmt' in parts:
+            max_len += 1
+
+        split_len = min(len(parts) - 1, max_len)
+        hostname = '.'.join(parts[:-split_len])
+        zone = '.'.join(parts[-split_len:])
+
+        return hostname, zone
 
 
 def setup_repo(config: ConfigParser, tmpdir: str) -> git.Repo:
@@ -202,36 +367,6 @@ def setup_repo(config: ConfigParser, tmpdir: str) -> git.Repo:
     working_repo = origin_repo.clone(tmpdir)
 
     return working_repo
-
-
-def write_direct_records(zonefile: TextIO, records: Sequence[Record]) -> None:
-    """Write direct records to the given zonefile."""
-    for record in sorted(records, key=lambda r: ('.'.join(r.hostname.split('.')[::-1]), r.ip.exploded)):
-        zonefile.write('{hostname} 1H IN {record_type} {ip}\n'.format(
-            hostname=record.hostname.ljust(DIRECT_LJUST_LEN),
-            record_type='AAAA' if record.ip.version == 6 else 'A',
-            ip=record.ip.compressed))
-
-
-def write_reverse_records(zonefile: TextIO, records: Sequence[Record]) -> None:
-    """Write reverse records to the given zonefile."""
-    for record in sorted(records, key=lambda r: [int(i) for i in r.reverse_ip.split('.')] + [r.hostname]):
-        zonefile.write('{reverse_ip} 1H IN PTR {hostname}.{zone}.\n'.format(
-            reverse_ip=record.reverse_ip.ljust(3), hostname=record.hostname, zone=record.zone))
-
-
-def generate_snippets(records: Mapping[str, Mapping[str, Sequence[Record]]], tmpdir: str) -> None:
-    """Generate the DNS snippet files."""
-    logger.info('Generating zonefile snippets to tmpdir %s', tmpdir)
-    for record_type, zones in records.items():
-        for zone, zone_records in zones.items():
-            with open(os.path.join(tmpdir, zone), 'w') as zonefile:
-                if record_type == 'direct':
-                    write_direct_records(zonefile, zone_records)
-                else:
-                    write_reverse_records(zonefile, zone_records)
-
-            logger.debug('Wrote %d %s records in %s zonefile', len(zone_records), record_type, zone)
 
 
 def get_file_stats(tmpdir: str) -> Tuple[int, int]:
@@ -288,11 +423,12 @@ def run(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> int:
     """Generate and commit the DNS snippets."""
     netbox = Netbox(config.get('netbox', 'api'), config.get('netbox', 'token_ro'))
     netbox.collect()
-    records = generate_records(netbox.devices, config.getint('dns_snippets', 'min_records'))
+    records = Records(netbox, config.getint('dns_snippets', 'min_records'))
+    records.generate()
     working_repo = setup_repo(config, tmpdir)
     files, lines = get_file_stats(tmpdir)
     working_repo.git.rm('.', r=True, ignore_unmatch=True)  # Delete all existing files to ensure removal of stale files
-    generate_snippets(records, tmpdir)
+    records.write_snippets(tmpdir)
     commit = commit_changes(args, working_repo)
 
     if commit is None:
