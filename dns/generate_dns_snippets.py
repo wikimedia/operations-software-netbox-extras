@@ -101,7 +101,7 @@ class Netbox:
         self.interfaces = {interface.id: interface for interface in self.api.dcim.interfaces.all()}
         self.prefixes = {ipaddress.ip_network(prefix.prefix) for prefix in self.api.ipam.prefixes.all()}
 
-        for device in self.api.dcim.devices.filter(status=Netbox.NETBOX_DEVICE_STATUSES):
+        for device in self.api.dcim.devices.filter(status=list(Netbox.NETBOX_DEVICE_STATUSES)):
             self.devices[device.name]['device'] = device
             if device.primary_ip4 is not None:
                 self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip4.id])
