@@ -24,8 +24,6 @@ from typing import Any, DefaultDict, Dict, List, Mapping, Optional, Sequence, Se
 import git
 import pynetbox
 
-from git.util import get_user_id
-
 
 logger = logging.getLogger()
 GIT_USER_NAME = 'generate-dns-snippets'
@@ -425,8 +423,7 @@ def commit_changes(args: argparse.Namespace, working_repo: git.Repo) -> Optional
         return None
 
     author = git.Actor(GIT_USER_NAME, GIT_USER_EMAIL)
-    message = '{user}: {message}'.format(user=get_user_id(), message=args.message)
-    commit = working_repo.index.commit(message, author=author, committer=author)
+    commit = working_repo.index.commit(args.message, author=author, committer=author)
     logger.info('Committed changes: %s', commit.hexsha)
 
     return commit
@@ -530,6 +527,7 @@ def main() -> int:
     config.read(args.config)
 
     batch_status = None
+    ret_code = EXCEPTION_RETURN_CODE
     try:
         if args.command == 'commit':
             tmpdir = tempfile.mkdtemp(prefix=TMP_DIR_PREFIX)
