@@ -551,7 +551,7 @@ def main() -> int:
             logger.info('Temporary directory %s removed.', tmpdir)
 
         if batch_status is not None:
-            print(json.dumps(batch_status))
+            print('METADATA:', json.dumps(batch_status))
 
     return ret_code
 
