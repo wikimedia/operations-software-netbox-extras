@@ -11,7 +11,7 @@ logger = logging.getLogger()
 
 SITE_MGMT_MASKS = {"ulsfo": "/17", "eqsin": "/17", "codfw": "/16", "esams": "/24", "eqiad": "/16"}
 
-SITE_MGMT_MASKS_FRACK = {"eqiad": "/26", "codfw": "/24"}
+SITE_MGMT_MASKS_FRACK = {"eqiad": "/26", "codfw": "/27"}
 
 
 def setup_logging(verbose=False):
