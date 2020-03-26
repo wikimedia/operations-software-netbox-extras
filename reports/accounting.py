@@ -50,7 +50,16 @@ class Accounting(Report):
         sheet = service.spreadsheets()
 
         # and fetch the spreadsheet's contents
-        result = sheet.values().get(spreadsheetId=sheet_id, range=range).execute()
+        result = (
+            sheet.values()
+            .get(
+                spreadsheetId=sheet_id,
+                range=range,
+                valueRenderOption="FORMULA",  # do not calculate formula values
+                dateTimeRenderOption="FORMATTED_STRING",
+            )
+            .execute()
+        )
         values = result.get("values", [])
         if not values:
             return values
@@ -124,11 +133,14 @@ class Accounting(Report):
         asset_tag_matches = ticket_matches = 0
         for serial, asset in self.assets.items():
             asset_tag = asset["asset_tag"]
+            asset_tag_is_formula = asset_tag.startswith("=NETBOX")
             ticket = asset["ticket"]
 
             try:
                 device = devices[serial]
             except KeyError:
+                if asset_tag_is_formula:
+                    asset_tag = "N/A"
                 self.log_failure(
                     None,
                     "Device with s/n {serial} ({asset_tag}) not present in Netbox".format(
@@ -137,7 +149,11 @@ class Accounting(Report):
                 )
                 continue
 
-            if asset_tag != device.asset_tag:
+            if asset_tag_is_formula:
+                # asset tag is set to a formula polling Netbox, so avoid pointlessly checking
+                # if that matches, as well as the circular reference that takes a while to resolve
+                pass
+            elif asset_tag != device.asset_tag:
                 self.log_failure(
                     device,
                     "Asset tag mismatch for s/n "
