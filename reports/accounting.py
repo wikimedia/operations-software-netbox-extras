@@ -7,7 +7,6 @@ Requires google-api-python-client and google-auth-oauthlib.
 """
 
 import configparser
-from collections import OrderedDict
 from datetime import date, datetime, timedelta
 
 from dcim.models import Device
@@ -80,7 +79,7 @@ class Accounting(Report):
 
         # do some light parsing of the data, and store this in a dict keyed
         # by serial number, as this is the key we use for matching
-        assets = OrderedDict()
+        assets = {}
         for row in values[2:]:
             # skip rows with merged columns, like page header, date sections etc.
             if len(row) < len(column_names):
@@ -141,12 +140,7 @@ class Accounting(Report):
             except KeyError:
                 if asset_tag_is_formula:
                     asset_tag = "N/A"
-                self.log_failure(
-                    None,
-                    "Device with s/n {serial} ({asset_tag}) not present in Netbox".format(
-                        serial=serial, asset_tag=asset_tag
-                    ),
-                )
+                self.log_failure(None, f"Device with s/n {serial} ({asset_tag}) not present in Netbox")
                 continue
 
             if asset_tag_is_formula:
@@ -156,10 +150,7 @@ class Accounting(Report):
             elif asset_tag != device.asset_tag:
                 self.log_failure(
                     device,
-                    "Asset tag mismatch for s/n "
-                    + "{serial}: {asset_tag} (Accounting) vs. {netbox_asset_tag} (Netbox)".format(
-                        serial=serial, asset_tag=asset_tag, netbox_asset_tag=device.asset_tag
-                    ),
+                    f"Asset tag mismatch for s/n {serial}: {asset_tag} (Accounting) vs. {device.asset_tag} (Netbox)",
                 )
             else:
                 asset_tag_matches += 1
@@ -178,15 +169,12 @@ class Accounting(Report):
 
             if ticket != netbox_ticket:
                 self.log_warning(
-                    device,
-                    "Ticket mismatch for s/n {serial}: {ticket} (Accounting) vs. {netbox_ticket} (Netbox)".format(
-                        serial=serial, ticket=ticket, netbox_ticket=netbox_ticket
-                    ),
+                    device, f"Ticket mismatch for s/n {serial}: {ticket} (Accounting) vs. {netbox_ticket} (Netbox)"
                 )
             else:
                 ticket_matches += 1
 
-        self.log_success(None, "{} asset tags and {} tickets matched".format(asset_tag_matches, ticket_matches))
+        self.log_success(None, f"{asset_tag_matches} asset tags and {ticket_matches} tickets matched")
 
     def test_missing_assets_from_accounting(self):
         """Searches for assets that are in Netbox but not in Accounting."""
@@ -206,12 +194,9 @@ class Accounting(Report):
         for device in recent_devices:
             if device.serial not in self.assets:
                 self.log_failure(
-                    device,
-                    "Device with s/n {serial} ({asset_tag}) not present in Accounting".format(
-                        serial=device.serial, asset_tag=device.asset_tag
-                    ),
+                    device, f"Device with s/n {device.serial} ({device.asset_tag}) not present in Accounting"
                 )
             else:
                 device_matches += 1
 
-        self.log_success(None, "{} devices ({} to {}) matched".format(device_matches, oldest_date, newest_date))
+        self.log_success(None, f"{device_matches} devices ({oldest_date} to {newest_date}) matched")
