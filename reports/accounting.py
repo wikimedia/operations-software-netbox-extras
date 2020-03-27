@@ -1,6 +1,7 @@
-"""
-Checks the consistency of Netbox data against asset information in a Google
-Sheet spreadsheet as maintained by Wikimedia Foundation's accounting
+"""Accounting Netbox report.
+
+Check the consistency of Netbox data against asset information in a Google
+Sheet spreadsheet, as maintained by Wikimedia Foundation's accounting
 department.
 
 Requires google-api-python-client and google-auth-oauthlib.
@@ -19,10 +20,9 @@ CONFIG_FILE = "/etc/netbox/gsheets.cfg"
 
 
 class Accounting(Report):
-    description = """
-    Checks the consistency of Netbox data against the Data Center Equipment
-    Asset Tags spreadsheet.
-    """
+    """Check the consistency of Netbox data against the Data Center Equipment Asset Tags spreadsheet."""
+
+    description = __doc__
 
     def run(self):
         """Load the config file and initializes the Google Sheets API."""
@@ -37,8 +37,7 @@ class Accounting(Report):
 
     @staticmethod
     def get_assets_from_accounting(creds, sheet_id, range):
-        """Retrieves all assets from a specified Google Spreadsheet."""
-
+        """Retrieve all assets from a specified Google Spreadsheet."""
         # initialize the credentials API
         creds = service_account.Credentials.from_service_account_info(
             creds, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -122,7 +121,6 @@ class Accounting(Report):
 
     def test_field_match(self):
         """Tests whether various fields match between Accounting and Netbox."""
-
         devices = {}
         qs = Device.objects.filter(serial__in=self.assets.keys())
         qs = qs.prefetch_related("custom_field_values__field")
@@ -178,7 +176,6 @@ class Accounting(Report):
 
     def test_missing_assets_from_accounting(self):
         """Searches for assets that are in Netbox but not in Accounting."""
-
         # the spreadsheet starts at FY17-18
         oldest_date = date(2017, 7, 1)
 
