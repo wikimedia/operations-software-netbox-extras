@@ -6,24 +6,25 @@ from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
 from ipam.choices import IPAddressStatusChoices
 from ipam.models import Prefix, IPAddress
-from extras.scripts import Script, ObjectVar, BooleanVar
+from extras.scripts import Script, StringVar
 
 
 class CreateManagementInterface(Script):
     class Meta:
         name = "Create management interface"
-        description = "Create a management interface for a specified device and assign an IP address."
+        description = "Create a management interface for specified device(s) and assign an IP address(es)."
 
-    device = ObjectVar(
-        description="Device to add management interface to", queryset=Device.objects.filter(device_role__slug="server"),
-    )
-    add_ip = BooleanVar(
-        label="Add IP",
-        description="Automatically add IP address from appropriate management network at site.",
-        default=True,
+    device = StringVar(
+        description="Device name(s) to add management interface(s) to (space separated)",
     )
 
     def _add_ip_to_interface(self, device, interface):
+        """Create an IP address for a device if appropriate from the correct prefix."""
+        if interface.ip_addresses.all():
+            message = "refusing to create additional IP address for mgmt on {}".format(device.name)
+            self.log_info(message)
+            return message
+
         # determine prefix appropriate to site of device
         try:
             prefix = Prefix.objects.get(site=device.site, role__slug="management", tenant=device.tenant)
@@ -75,20 +76,23 @@ class CreateManagementInterface(Script):
 
     def run(self, data):
         """Create a 'mgmt' interface, and, if requested, allocate an appropriate IP address."""
-        device = data['device']
-
-        try:
-            mgmt = device.interfaces.get(name='mgmt')
-            self.log_info("mgmt already exists for device {}".format(device.name))
-        except ObjectDoesNotExist:
-            # create interface of name mgmt, is_mgmt flag set of type 1G Ethernet
-            mgmt = Interface(name="mgmt", mgmt_only=True, device=device, type=InterfaceTypeChoices.TYPE_1GE_FIXED)
-            mgmt.save()
-
-        if data['add_ip']:
-            return self._add_ip_to_interface(device, mgmt)
-
-        else:
-            message = "Created mgmt on device {}".format(device.name)
-            self.log_success(message)
+        devices = Device.objects.filter(name__in=data['device'].split())
+        messages = []
+        if not devices:
+            message = "No devices found for specified list."
+            self.log_failure(message)
             return message
+
+        for device in devices:
+            self.log_info("processing device {}".format(device.name))
+            try:
+                mgmt = device.interfaces.get(name='mgmt')
+                self.log_info("mgmt already exists for device {}".format(device.name))
+            except ObjectDoesNotExist:
+                # create interface of name mgmt, is_mgmt flag set of type 1G Ethernet
+                mgmt = Interface(name="mgmt", mgmt_only=True, device=device, type=InterfaceTypeChoices.TYPE_1GE_FIXED)
+                mgmt.save()
+
+            messages.append(self._add_ip_to_interface(device, mgmt))
+
+        return "\n".join(messages)
