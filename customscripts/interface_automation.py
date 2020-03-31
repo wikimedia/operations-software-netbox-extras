@@ -1,4 +1,12 @@
+import configparser
 import ipaddress
+import re
+import json
+
+import requests
+
+from dns import resolver, reversename
+from dns.exception import DNSException
 
 from string import ascii_lowercase
 
@@ -8,9 +16,560 @@ from django.db.models import Q
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
 from extras.constants import LOG_LEVEL_CODES
-from extras.scripts import BooleanVar, ChoiceVar, ObjectVar, Script, StringVar
+from extras.scripts import BooleanVar, ChoiceVar, ObjectVar, Script, StringVar, TextVar
 from ipam.models import IPAddress, Prefix, VLAN
+from ipam.filters import PrefixFilterSet
 from utilities.forms import APISelect
+from virtualization.models import VirtualMachine
+
+CONFIGFILE = "/etc/netbox/reports.cfg"
+
+# Interfaces which we skip when importing
+INTERFACE_IMPORT_BLACKLIST_RE = (re.compile(r"^cali.*"),  # Kubernetes
+                                 re.compile(r"^tap.*"),  # Ganeti & Openstack
+                                 re.compile(r"^lo$"),)  # Loopback
+
+# PTRs that we skip when adding names to IPs
+IP_PTR_BLACKLIST_RE = tuple()
+
+# Statuses that devices must be to import
+IMPORT_STATUS_WHITELIST = ("active",
+                           "staged",
+                           "failed",
+                           "planned")
+
+# Hostname regexes that are immune to VIP removal because of a bug in provisioning them
+# this is a temporary work around until 618766 is merged. The "VIP"s on these hosts will
+# be given the netmask of the parent prefix.
+NO_VIP_RE = (re.compile(r"^aqs.*"),
+             re.compile(r"^restbase.*"),
+             re.compile(r"^sessionstore.*"))
+
+
+class Importer:
+    """This is shared functionality for interface and IP address importers."""
+
+    @staticmethod
+    def _get_ipv6_prefix_length(ipv6mask):
+        """Convert an old-style IPv6 netmask into a prefix length in bits.
+
+        This is provided because the ipaddress library does not support this (deprecated) method
+        of specifying the host bits, however this is how PuppetDB provides the information.
+
+        Arguments:
+            ipv6mask (str): An IPv6 netmask
+
+        Returns:
+            int: The number of network prefix bits contained in the netmask.
+
+        """
+        counts = [
+            0,
+            0x8000,
+            0xC000,
+            0xE000,
+            0xF000,
+            0xF800,
+            0xFC00,
+            0xFE00,
+            0xFF00,
+            0xFF80,
+            0xFFC0,
+            0xFFE0,
+            0xFFF0,
+            0xFFF8,
+            0xFFFC,
+            0xFFFE,
+            0xFFFF,
+        ]
+
+        length = 0
+
+        for chunk in ipv6mask.split(":"):
+            if not chunk:
+                break
+
+            chunk_int = int(chunk, 16)
+            if chunk_int == 0:
+                break
+
+            length += counts.index(chunk_int)
+
+        return length
+
+    def _resolve_address(self, qname, rrtype):
+        """Perform a DNS resolution on an A or AAAA record.
+
+        Returns empty list on no results.
+        """
+        results = []
+        try:
+            result = resolver.query(qname, rrtype)
+            for res in result.rrset:
+                results.append(res.address)
+        except (resolver.NoAnswer, resolver.NXDOMAIN):
+            self.log_debug(f"[DNS] Record {rrtype} not found for {qname}")
+        except DNSException:
+            self.log_debug(f"[DNS] Cannot resolve {rrtype} for {qname}")
+        return results
+
+    def _resolve_ipv6(self, dnsname):
+        return self._resolve_address(dnsname, "AAAA")
+
+    def _resolve_ipv4(self, dnsname):
+        return self._resolve_address(dnsname, "A")
+
+    def _resolve_ptr(self, ipaddr):
+        """Perform a DNS PTR resolution.
+
+        Returns empty None if there is no result."""
+        try:
+            result = resolver.query(reversename.from_address(ipaddr), "PTR")
+            results = [r.target.to_text().strip(".") for r in result.rrset]
+            return results
+        except (resolver.NoAnswer, resolver.NXDOMAIN):
+            self.log_debug(f"[DNS] PTR record not found for {ipaddr}")
+        except DNSException as e:
+            self.log_debug(f"[DNS] PTR cannot resolve {ipaddr}: exception {e}")
+        return []
+
+    def _assign_name(self, ipaddr, networking, is_ipv6):
+        """Possibly assign name to address if the conditions are right. Otherwise,
+           return a message array explaining why we didn't."""
+
+        # leave it alone if it's already assigned to the right name
+        if (ipaddr.dns_name == networking["fqdn"]):
+            self.log_info(f"{networking['fqdn']} assign_name: {ipaddr.address} already has correct DNS name.")
+            return []
+
+        # leave it alone if it's assigned another name, but warn as this requires human intervention
+        if (ipaddr.dns_name):
+            self.log_failure((f"{networking['fqdn']} assign_name: {ipaddr.address} has a different DNS name than"
+                              f"expected: {ipaddr.dns_name}"))
+            return []
+
+        # consider ipaddress for DNS name
+        # FIXME: Note that the DNS logic is transition period
+        # temporary to shake out any unassigned IP addresses and similar.
+        output = []
+        nogo = True
+        ptr = self._resolve_ptr(str(ipaddress.ip_interface(ipaddr.address).ip))
+        if (is_ipv6):
+            ipv6 = self._resolve_ipv6(networking["fqdn"])
+            if (not ipv6) and (not ptr):
+                self.log_warning(f"{networking['fqdn']} assign_name: No IPv6 DNS records.")
+                output.append(f"{networking['fqdn']} assign_name: No IPv6 DNS records.")
+            elif (not ipv6):
+                self.log_warning(f"{networking['fqdn']} assign_name: No IPv6 AAAA records.")
+                output.append(f"{networking['fqdn']} assign_name: No IPv6 AAAA records.")
+            elif (not ptr):
+                self.log_warning(f"{networking['fqdn']} assign_name: No IPv6 PTR record.")
+                output.append(f"{networking['fqdn']} assign_name: No IPv6 PTR record.")
+            else:
+                nogo = False
+        else:
+            ipv4 = self._resolve_ipv4(networking["fqdn"])
+            if (not ipv4) and (not ptr):
+                self.log_warning(f"{networking['fqdn']} assign_name: No IPv4 DNS records.")
+                output.append(f"{networking['fqdn']} assign_name: No IPv4 DNS records.")
+            elif (not ipv4):
+                self.log_warning(f"{networking['fqdn']} assign_name: No IPv4 A records.")
+                output.append(f"{networking['fqdn']} assign_name: No IPv4 A records.")
+            elif (not ptr):
+                self.log_warning(f"{networking['fqdn']} assign_name: No IPv4 PTR record.")
+                output.append(f"{networking['fqdn']} assign_name: No IPv4 PTR record.")
+            else:
+                nogo = False
+
+        if not nogo:
+            self.log_info(f"Adding FQDN {networking['fqdn']} to {ipaddr}")
+            ipaddr.dns_name = networking["fqdn"]
+
+        return output
+
+    def _maybe_assign_rdns(self, ipaddr):
+        ptr = self._resolve_ptr(str(ipaddress.ip_interface(ipaddr.address).ip))
+
+        if ptr:
+            if (len(ptr) > 1):
+                self.log_error(f"SKIPPING assignment for {ipaddr} has more than 1 reverse value.")
+                return
+            potname = ptr[0]
+            if any(r.match(potname) for r in IP_PTR_BLACKLIST_RE):
+                self.log_warning(f"SKIPPING assignment for {ipaddr} has blacklisted name {potname}.")
+                return
+            self.log_info(f"assigning ptr name {potname} to {ipaddr}")
+            ipaddr.dns_name = potname
+
+    def _assign_ip_to_interface(self, address, nbiface, networking, iface, is_primary, is_ipv6):
+        """Perform the minor complexity of assigning an IP address to an interface as specified by
+           a PuppetDB interface fact."""
+        output = []
+
+        # heuristically determine if this is probably anycast
+        if iface.startswith("lo:anycast"):
+            self.log_info(f"{address} on {iface} is being assigned as anycast.")
+            role = "anycast"
+        else:
+            role = ""
+
+        # try to get the existing ip address object from netbox
+        try:
+            ipaddr = IPAddress.objects.get(address=str(address))
+        except ObjectDoesNotExist:
+            self.log_info(f"Creating {address}")
+            ipaddr = IPAddress(address=str(address),
+                               interface=nbiface, role=role)
+            ipaddr.save()
+
+        oldiface = ipaddr.interface
+        if oldiface:
+            if ipaddr.interface.virtual_machine:
+                olddev = ipaddr.interface.virtual_machine
+            else:
+                olddev = ipaddr.interface.device
+        else:
+            olddev = None
+
+        if nbiface.virtual_machine:
+            newdev = nbiface.virtual_machine
+        else:
+            newdev = nbiface.device
+
+        if not ipaddr.interface:
+            # no interface assigned
+            self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
+        elif olddev != newdev:
+            # the ip address is asigned to a completely different device
+            # and this is not a vdev, reassign
+            self.log_info(f"Taking IP address {ipaddr} from {olddev}:{ipaddr.interface}")
+            self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
+            if is_ipv6 and olddev.primary_ip6 == ipaddr:
+                olddev.primary_ip6 = None
+            elif olddev.primary_ip4 == ipaddr:
+                olddev.primary_ip4 = None
+            ipaddr.interface.save()
+            olddev.save()
+            ipaddr.save()
+        else:
+            # on same device but different interface
+            if ipaddr.interface.name not in networking["interfaces"]:
+                # basically renaming a device so we need to copy the description field
+                nbiface.description = ipaddr.interface.description
+                nbiface.save()
+
+        # finally actually reassign interface
+        ipaddr.interface = nbiface
+        if ipaddr.status != "active" or ipaddr.status is None:
+            self.log_info(f"Non-active IP address {ipaddr} being assigned, old status {ipaddr.status}")
+        ipaddr.status = "active"
+
+        if ipaddr.description == "reserved for infra":
+            ipaddr.description = ""
+
+        if (iface == networking["primary"] and is_primary):
+            # Try assigning DNS name and getting information about DNS.
+            output = self._assign_name(ipaddr, networking, is_ipv6)
+
+            ipaddr.is_primary = True
+            self.log_info(f"Setting {nbiface} as primary for {newdev}")
+            if is_ipv6:
+                newdev.primary_ip6 = ipaddr
+            else:
+                newdev.primary_ip4 = ipaddr
+        else:
+            # FIXME this is transitional and should be removed after dns is generated
+            self._maybe_assign_rdns(ipaddr)
+
+        newdev.save()
+
+        ipaddr.role = role
+        ipaddr.save()
+        return output
+
+    def _process_binding_address(self, binding, is_ipv6, is_anycast, vip_exempt):
+        """Convert a binding to an ipaddress.ip_interface object, possibly pushing it to VIP processing
+           (instead of being considered for attaching to an interface). Returns None if VIP, or an
+           ipaddress.ip_interface object."""
+        addr = binding["address"]
+        if is_ipv6:
+            # we need to translate the netmask6 exposed by puppet into a prefix length since ipaddress
+            # library does not support this case.
+            nm = self._get_ipv6_prefix_length(binding["netmask"])
+        else:
+            nm = binding["netmask"]
+
+        address = ipaddress.ip_interface(f"{addr}/{nm}")
+
+        if ((address.is_link_local) or (address.is_loopback)):
+            # We skip link local and loopback addresses
+            return None
+
+        if (vip_exempt):
+            # FIXME
+            # this is a bug in our deployment of certain servers where some service addresses have
+            # an incorrect netmask and aren't actually VIPs
+            # figure out the actual netmask from the prefix
+            prefixq = PrefixFilterSet().search_contains(Prefix.objects.all(), "", str(address))
+            if (not prefixq):
+                self.log_error(f"Can't find matching prefix for {address} when fixing netmask!")
+                return None
+            realnetmask = max([i.prefix.prefixlen for i in prefixq])
+            address = ipaddress.ip_interface(f"{addr}/{realnetmask}")
+            self.log_info("VIP exempt: Overriding provided netmask")
+
+        if (is_anycast or (address.network.prefixlen in (32, 128))):
+            # We specially handle VIP addresses but do not allow them to be bound
+            self.log_info(f"{address} is a VIP and will be created but left unassigned.")
+            self._handle_vip(address, is_anycast)
+            return None
+
+        return address
+
+    def _handle_vip(self, address, is_anycast):
+        """Do special processing for a potential VIP that will not be bound to an interface."""
+        # Given a VIP, handle directly rather than processing with a host interface.
+        role = "anycast" if is_anycast else "vip"
+        try:
+            ipaddrs = IPAddress.objects.filter(address=str(address))
+            if (ipaddrs.count() > 1):
+                self.log_info(f"{address} has multiple results ! taking the 0th one")
+            elif (ipaddrs.count() == 0):
+                raise ObjectDoesNotExist()
+            ipaddr = ipaddrs[0]
+            ipaddr.role = role
+            ipaddr.interface = None
+        except ObjectDoesNotExist:
+            self.log_info(f"Creating {address}")
+            ipaddr = IPAddress(address=str(address),
+                               interface=None, role=role)
+        ipaddr.status = "active"
+        self._maybe_assign_rdns(ipaddr)
+        ipaddr.save()
+
+    def _import_interfaces_for_device(self, device, net_driver, networking, is_virtual=False):
+        """Resolve one device's interfaces and ip addresses based on a net_driver and networking dictionary
+           as would be obtained from PuppetDB under those key names."""
+        output = []
+
+        # clean up potential ##PRIMARY## interface
+        for dif in device.interfaces.all():
+            if dif.name == '##PRIMARY##' and 'primary' in networking:
+                self.log_info(f"{device.name} Renaming ##PRIMARY## interface to {networking['primary']}")
+                dif.name = networking['primary']
+                dif.save()
+                break
+
+        for iface, iface_dict in networking["interfaces"].items():
+            is_vdev = ((":" in iface) or ("." in iface) or ("lo" == iface))
+            is_anycast = (iface.startswith("lo:anycast"))
+            if any(r.match(iface) for r in INTERFACE_IMPORT_BLACKLIST_RE):
+                # don't create interfaces for blacklisted iface, but we still want to process
+                # their IP addresses.
+                nbiface = None
+            else:
+                try:
+                    nbiface = device.interfaces.get(name=iface)
+                except ObjectDoesNotExist:
+                    self.log_info(f"Creating interface {iface} for device {device}".format(iface, device))
+
+                    iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED
+
+                    # heuristically determine the device format
+                    if is_vdev or is_virtual:
+                        iface_fmt = InterfaceTypeChoices.TYPE_VIRTUAL
+                    elif iface in net_driver:
+                        if net_driver[iface]["speed"] == 10000:
+                            iface_fmt = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
+
+                    # only set MTU if it is non-default and not a loopback
+                    mtu = None
+                    if "mtu" in iface_dict and iface_dict["mtu"] != 1500 and iface != "lo":
+                        mtu = iface_dict["mtu"]
+
+                    if is_virtual:
+                        nbiface = Interface(name=iface,
+                                            mgmt_only=False,
+                                            virtual_machine=device,
+                                            type=iface_fmt,
+                                            mtu=mtu)
+                    else:
+                        nbiface = Interface(name=iface,
+                                            mgmt_only=False,
+                                            device=device,
+                                            type=iface_fmt,
+                                            mtu=mtu)
+                    nbiface.save()
+
+            # FIXME /32 bug things here
+            vipexempt = any([r.match(device.name) for r in NO_VIP_RE])
+            if "bindings" in iface_dict:
+                for binding in iface_dict["bindings"]:
+                    address = self._process_binding_address(binding, False, is_anycast, (vipexempt and not is_vdev))
+                    if address is None or nbiface is None:
+                        continue
+                    # process ipv4 addresses
+                    isprimary = False
+                    if "ip" in iface_dict and binding["address"] == iface_dict["ip"]:
+                        isprimary = True
+                    output = output + self._assign_ip_to_interface(address,
+                                                                   nbiface,
+                                                                   networking,
+                                                                   iface,
+                                                                   isprimary,
+                                                                   False)
+            if "bindings6" in iface_dict:
+                for binding in iface_dict["bindings6"]:
+                    address = self._process_binding_address(binding, True, is_anycast, (vipexempt and not is_vdev))
+                    if address is None or nbiface is None:
+                        continue
+                    # process ipv4 addresses
+                    isprimary = False
+                    if "ip" in iface_dict and binding["address"] == iface_dict["ip6"]:
+                        isprimary = True
+                    output = output + self._assign_ip_to_interface(address,
+                                                                   nbiface,
+                                                                   networking,
+                                                                   iface,
+                                                                   isprimary,
+                                                                   True)
+        return output
+
+    def _validate_device(self, device):
+        """Check if device is OK for import."""
+        # Devices should be in the STATUS_WHITELIST to import
+        if device.status not in IMPORT_STATUS_WHITELIST:
+            self.log_failure(
+                f"{device} has an inappropriate status (must be one of {IMPORT_STATUS_WHITELIST}): {device.status}"
+            )
+            return False
+
+        return True
+
+    def _validate_vm(self, device):
+        """Check if the virtual machine is OK for import."""
+        return True  # Try to import VMs in any state if the data is provided.
+
+
+class ImportNetworkFacts(Script, Importer):
+    class Meta:
+        name = "Import Interfaces from a JSON blob"
+        description = "Accept a JSON blob and resolve interface and IP address differences."
+
+    device = StringVar(description="The device name to import interfaces and IP addresses for.",
+                       label="Device")
+    jsonblob = TextVar(description=("A JSON Dictionary with at least the `networking` key similar to what PuppetDB "
+                                    "outputs. It may contain a `net_driver` key which specifies the speed of each"
+                                    "interface, but the devices will take the default value if this is not specified."),
+                       label="Facts JSON")
+    statusoverride = BooleanVar(description="Override device status")
+
+    def __init__(self, *args, **vargs):
+        super().__init__(*args, **vargs)
+
+    def _is_invalid_facts(self, facts):
+        """We can very validate facts beyond this level, things will just explode if the facts are incorrect however."""
+        if ("networking" not in facts):
+            self.log_failure(f"Can't find `networking` in facts JSON."
+                             f"Keys in blob are: {list(facts.keys())}")
+            return True
+        if ("net_driver" not in facts):
+            self.log_warning("Can't find `net_driver` in facts JSON. Using default speed for all interfaces.")
+
+    def run(self, data, commit):
+        """Execute script as per Script interface."""
+        facts = json.loads(data["jsonblob"])
+        if self._is_invalid_facts(facts):
+            return ""
+
+        is_vm = False
+        try:
+            device = Device.objects.get(name=data["device"])
+            if ((not data["statusoverride"]) and (not self._validate_device(device))):
+                return ""
+        except ObjectDoesNotExist:
+            try:
+                device = VirtualMachine.objects.get(name=data["device"])
+                if ((not data["statusoverride"]) and (not self._validate_vm(device))):
+                    return ""
+                is_vm = True
+            except ObjectDoesNotExist:
+                self.log_failure(f"Not devices found by the name {data['device']}")
+                return ""
+
+        self.log_info(f"Processing device {device}")
+        net_driver = {}
+        if "net_driver" in facts:
+            net_driver = facts["net_driver"]
+        messages = self._import_interfaces_for_device(device, net_driver, facts["networking"], is_vm)
+        self.log_info(f"{device} done.")
+
+        return "\n".join(messages)
+
+
+class ImportPuppetDB(Script, Importer):
+    class Meta:
+        name = "Import Interfaces and IPAddresses from PuppetDB"
+        description = "Access PuppetDB and resolve interface and IP address differences."
+
+    device = StringVar(description="The device name(s) to import interface(s) for (space separated)",
+                       label="Devices")
+
+    def _validate_device(self, device):
+        """Check if a device is OK to import from PuppetDB (overrides Importer's)"""
+        if device.tenant:
+            self.log_failure(f"{device} has non-null tenant {device.tenant} skipping.")
+            return False
+        return super()._validate_device(device)
+
+    def _get_networking_facts(self, cfg, device):
+        """Access PuppetDB for `networking` and `net_driver` facts."""
+        # Get networking facts
+        puppetdb_url = "/".join([cfg["puppetdb"]["url"], "v1/facts", "{}", device.name])
+        response = requests.get(puppetdb_url.format("networking"), verify=cfg["puppetdb"]["ca_cert"])
+        if response.status_code != 200:
+            self.log_failure(f"Cannot retrieve PuppetDB `networking` facts about {device.name}")
+            return None, None
+        networking = response.json()
+        # Get net_driver facts
+        response = requests.get(puppetdb_url.format("net_driver"), verify=cfg["puppetdb"]["ca_cert"])
+        if response.status_code != 200:
+            self.log_failure(f"Cannot retrieve PuppetDB `net_driver` facts about {device.name}")
+            return None, None
+        net_driver = response.json()
+        return net_driver, networking
+
+    def run(self, data, commit):
+        """Execute script as per Script interface."""
+        cfg = configparser.ConfigParser()
+        cfg.read(CONFIGFILE)
+
+        devices = Device.objects.filter(name__in=data["device"].split())
+        vmdevices = VirtualMachine.objects.filter(name__in=data["device"].split())
+        messages = []
+        if not devices and not vmdevices:
+            message = "No Netbox devices found for specified list."
+            self.log_failure(message)
+            return message
+
+        for device in devices:
+            self.log_info(f"Processing device {device}")
+            if self._validate_device(device):
+                net_driver, networking = self._get_networking_facts(cfg, device)
+                if net_driver is None:
+                    continue
+                messages.extend(self._import_interfaces_for_device(device, net_driver, networking, False))
+            self.log_info(f"{device} done.")
+        for device in vmdevices:
+            self.log_info(f"Processing virtual device {device}")
+            if self._validate_vm(device):
+                net_driver, networking = self._get_networking_facts(cfg, device)
+                if net_driver is None:
+                    continue
+                messages.extend(self._import_interfaces_for_device(device, net_driver, networking, True))
+            self.log_info(f"{device} done.")
+
+        return "\n".join(messages)
 
 
 # Switch to True once all primary IPs are imported into Netbox
