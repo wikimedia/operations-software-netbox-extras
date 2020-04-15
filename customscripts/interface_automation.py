@@ -76,6 +76,7 @@ class CreateManagementInterface(Script):
 
     def run(self, data):
         """Create a 'mgmt' interface, and, if requested, allocate an appropriate IP address."""
+        # we don't filter status or role here so we can report later on rather that just not finding them
         devices = Device.objects.filter(name__in=data['device'].split())
         messages = []
         if not devices:
@@ -85,6 +86,12 @@ class CreateManagementInterface(Script):
 
         for device in devices:
             self.log_info("processing device {}".format(device.name))
+            if (device.status not in ("inventory", "planned")):
+                self.log_failure("device {} is not in state Inventory or Planned, skipping".format(device))
+                continue
+            if (device.device_role.slug != "server"):
+                self.log_failure("device {} is not a server, skipping".format(device))
+                continue
             try:
                 mgmt = device.interfaces.get(name='mgmt')
                 self.log_info("mgmt already exists for device {}".format(device.name))
