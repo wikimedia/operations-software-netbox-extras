@@ -29,8 +29,14 @@ INTERFACES_REGEXP = (
     r"^fxp\d-re\d$",  # routing engine management interfaces
     r"^[a-z]+-\d+/\d+/\d+(\.\d+){0,1}$",  # Juniper interfaces eg et-0/0/0
     r"^[a-z]{1,4}(\d+){0,1}(\.\d+){0,1}$",  # typical device names (eg eth0) and vlan.900 etc.
-    r"^enp\d+s\d+(f\d+)?((d|np)\d+)?$",  # systemd 'path' devices
+    r"^en(p\d+)?s\d+(f\d+)?((d|np)\d+)?$",  # systemd 'path' devices
+    r"^cali[a-f0-9]+",  # kubernetes calico interfaces
+    r"^(tap|brq)[a-f0-9]+\-[a-f0-9]+",  # cloudnet interfaces
+    r"^vxlan-\d+",  # cloudnet vxlan interfaces
+    r"^(br-internal|br-external|br-int)$",  # more cloudnet interfaces
     r"^\d+$",  # Netgear switch interfaces are just numbers.
+    r"^lo([.:].+)",  # virtual interfaces
+    r"^(public|private)$",  # ganeti interfaces
 )
 
 BLANK_CABLES_SITE_BLACKLIST = ('eqiad',)
