@@ -9,7 +9,7 @@ from configparser import ConfigParser
 
 from flask import Flask, abort, make_response
 
-app = Flask(__name__)  # flake8: disable=invalid-name
+application = app = Flask(__name__)  # flake8: disable=invalid-name
 
 ALLOWED_SCRIPTS = ('getstats.GetDeviceStats',)
 
