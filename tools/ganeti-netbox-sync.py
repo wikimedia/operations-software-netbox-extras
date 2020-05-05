@@ -84,7 +84,7 @@ def ganeti_rapi_query(endpoint, base_url, user, password, ca_cert):
     return r.json()
 
 
-def ganeti_host_to_netbox(ganeti_dict, virtual_machine_statuses, additional_fields):
+def ganeti_host_to_netbox(ganeti_dict, additional_fields):
     """Takes a single entry from the Ganeti host list and returns just the fields pertinent to Netbox
     along with any additional fields that need to be added"""
     shortname = ganeti_dict["name"].split(".")[0]
@@ -96,9 +96,9 @@ def ganeti_host_to_netbox(ganeti_dict, virtual_machine_statuses, additional_fiel
     }
     # admin_state is the desired state of the machine, which maps nicely to the status field.
     if ganeti_dict["admin_state"] == "up":
-        output["status"] = virtual_machine_statuses["Active"]
+        output["status"] = "active"
     else:
-        output["status"] = virtual_machine_statuses["Offline"]
+        output["status"] = "offline"
     output.update(additional_fields)
     return output
 
@@ -136,8 +136,6 @@ def sync_ganeti_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_hosts, 
     nb_cluster_id = nbapi.virtualization.clusters.get(name=cluster_name).id
     nb_server_id = nbapi.dcim.device_roles.get(slug="server").id
 
-    nb_vhost_statuses = {ch["label"]: ch["value"] for ch in nbapi.virtualization.choices()["virtual-machine:status"]}
-
     nb_vhosts = {}
     # make a convenient dictionary of netbox hosts
     for host in nbapi.virtualization.virtual_machines.filter(cluster=nb_cluster_id):
@@ -152,7 +150,7 @@ def sync_ganeti_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_hosts, 
             results["del"] += 1
         else:
             try:
-                ganeti_host = ganeti_host_to_netbox(ganeti_hosts[nb_host_name], nb_vhost_statuses, {})
+                ganeti_host = ganeti_host_to_netbox(ganeti_hosts[nb_host_name], {})
             except (KeyError, TypeError) as e:
                 logger.error(
                     "Host %s raised an exception when trying to convert to Netbox for syncing: %s", nb_host_name, e
@@ -180,7 +178,6 @@ def sync_ganeti_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_hosts, 
         try:
             ganeti_host_dict = ganeti_host_to_netbox(
                 ganeti_host,
-                nb_vhost_statuses,
                 {"cluster": nb_cluster_id, "platform": nb_linux_id, "role": nb_server_id},
             )
         except (KeyError, TypeError) as e:
