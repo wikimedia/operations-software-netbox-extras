@@ -9,7 +9,7 @@ import re
 
 from collections import defaultdict
 
-from dcim.choices import DeviceStatusChoices
+from dcim.choices import CableStatusChoices, DeviceStatusChoices
 
 from dcim.models import Cable, ConsolePort, ConsoleServerPort, Interface, PowerPort, PowerOutlet
 from extras.reports import Report
@@ -142,10 +142,11 @@ class Cables(Report):
     def test_blank_cable_label(self):
         """Cables should not have blank labels."""
         success = 0
-        for cable in Cable.objects.filter(status=True):
+        for cable in Cable.objects.filter(status=CableStatusChoices.STATUS_CONNECTED):
             if cable.label is None or not cable.label.strip():
                 site = self._get_site_slug_for_cable(cable)
                 if site in BLANK_CABLES_SITE_BLACKLIST:
+                    self.log_warning(cable, "blank cable label (site {})".format(site))
                     continue
                 self.log_failure(cable, "blank cable label (site {})".format(site))
             else:
