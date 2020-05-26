@@ -80,7 +80,7 @@ def ganeti_rapi_query(endpoint, base_url, user, password, ca_cert):
     target_url = "/".join((base_url.strip("/"), "2", endpoint))
     r = requests.get(target_url, auth=HTTPBasicAuth(user, password), verify=ca_cert, timeout=30)
     if r.status_code != 200:
-        raise Exception("Can't access Ganeti API %s %s".format(r.status_code, r.text))
+        raise Exception("Can't access Ganeti API {} {}".format(r.status_code, r.text))
     return r.json()
 
 
