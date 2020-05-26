@@ -87,16 +87,10 @@ def parse_rr(infile, record_types):
 
 def resolve_dns_with_netbox(api, host_dict, asset_dict, dry_run=False):
     """Resolve the management interface states in Netbox with the states represented by host_dict and asset_dict."""
-    statuses = [
-        x["value"]
-        for x in api.dcim.choices()["device:status"]
-        if x["label"] in ("Active", "Planned", "Staged", "Failed", "Inventory", "Decommissioning")
-    ]
+    statuses = ['active', 'planned', 'staged', 'failed', 'inventory', 'decommissioning']
     hosts = api.dcim.devices.filter(role=["server", "pdu"], status=statuses)
-    iface_type_1g = [x["value"] for x in api.dcim.choices()["interface:type"] if x["label"] == "1000BASE-T (1GE)"][0]
-    iface_type_1m = [x["value"] for x in api.dcim.choices()["interface:type"] if x["label"] == "100BASE-TX (10/100ME)"][
-        0
-    ]
+    iface_type_1g = '1000base-t'
+    iface_type_1m = '100base-tx'
     frack_tenant_id = api.tenancy.tenants.get(slug="fr-tech").id
     for host in hosts:
         if host.name in host_dict:
