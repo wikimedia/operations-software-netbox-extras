@@ -26,20 +26,20 @@ class OfflineDevice(Script):
         device = Device.objects.get(name=data['device_name'])
         self.log_info('Found Netbox device')
         if device.status != 'decommissioning':
-            raise RuntimeError('Device {name} is in {status} status, only already decommissioned devices '
+            raise RuntimeError('Device {name} is in {status} status, only decommissioned devices '
                                'can be offlined.'.format(name=device, status=device.status))
 
-        self.log_info('Setting device %s status to Offline', device)
+        self.log_info('Setting device {device} status to Offline'.format(device=device))
         device.status = 'offline'
         device.save()  # Avoid any race condition with DNS generations scripts
 
         for interface in device.interfaces.all():
             for address in interface.ip_addresses.all():
-                self.log_info('Deleting address %s with DNS name %s on interface %s',
-                              address, address.dns_name, interface)
+                self.log_info('Deleting address {ip} with DNS name {dns} on interface {iface}'.format(
+                              ip=address, dns=address.dns_name, iface=interface))
                 address.delete()
 
-            self.log_info('Deleting interface %s', interface)
+            self.log_info('Deleting interface {iface}'.format(iface=interface))
             interface.delete
 
         device.save()
