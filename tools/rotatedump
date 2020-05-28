@@ -2,7 +2,7 @@
 
 DUMPPATH=/srv/netbox-dumps
 VENVPYTHON=/srv/deployment/netbox/venv/bin/python
-DUMPSCRIPT=/srv/deployment/netbox/deploy/scripts/dumpbackup.py
+DUMPSCRIPT=/srv/deployment/netbox-extras/tools/dumpbackup.py
 KEEP=16
 
 for dir in $(ls -d $DUMPPATH/20* | sort -h -r | tail -n +$KEEP); do
