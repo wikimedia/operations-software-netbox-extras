@@ -19,7 +19,7 @@ from collections import defaultdict
 from configparser import ConfigParser
 from operator import attrgetter
 from pathlib import Path
-from typing import Any, DefaultDict, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, DefaultDict, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import git
 import pynetbox
@@ -39,6 +39,9 @@ WARNING_PERCENTAGE_LINES_CHANGED = 3
 ERROR_PERCENTAGE_LINES_CHANGED = 5
 WARNING_PERCENTAGE_FILES_CHANGED = 8
 ERROR_PERCENTAGE_FILES_CHANGED = 15
+
+# Typing alias for a Netbox device, either physical or virtual.
+NetboxDeviceType = Union[pynetbox.models.dcim.Devices, pynetbox.models.virtualization.VirtualMachines]
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -101,6 +104,7 @@ class Netbox:
     """Class to manage all data from Netbox."""
 
     NETBOX_DEVICE_STATUSES = ('active', 'planned', 'staged', 'failed', 'inventory', 'decommissioning',)
+    NETBOX_VM_STATUSES = ('active', 'planned', 'staged', 'failed', 'decommissioning',)
     NETBOX_DEVICE_MGMT_ONLY_STATUSES = ('inventory', 'decommissioning')
 
     def __init__(self, url: str, token: str):
@@ -114,36 +118,54 @@ class Netbox:
         self.api = pynetbox.api(url=url, token=token)
         self.devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
         self.addresses = {}  # type: dict
-        self.interfaces = {}  # type: dict
+        self.physical_interfaces = {}  # type: dict
+        self.virtual_interfaces = {}  # type: dict
         self.prefixes = set()  # type: Set
 
     def collect(self) -> None:
         """Collect all the data from Netbox. Must be called before using the class."""
         logger.info('Gathering devices, interfaces, addresses and prefixes from Netbox')
         self.addresses = {addr.id: addr for addr in self.api.ipam.ip_addresses.all()}
-        self.interfaces = {interface.id: interface for interface in self.api.dcim.interfaces.all()}
+        self.physical_interfaces = {interface.id: interface for interface in self.api.dcim.interfaces.all()}
+        self.virtual_interfaces = {interface.id: interface for interface in self.api.virtualization.interfaces.all()}
         self.prefixes = {ipaddress.ip_network(prefix.prefix) for prefix in self.api.ipam.prefixes.all()}
 
         for device in self.api.dcim.devices.filter(status=list(Netbox.NETBOX_DEVICE_STATUSES)):
-            self.devices[device.name]['device'] = device
-            if device.primary_ip4 is not None:
-                self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip4.id])
-            if device.primary_ip6 is not None:
-                self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip6.id])
+            self._collect_device(device)
+
+        for vm in self.api.virtualization.virtual_machines.filter(status=list(Netbox.NETBOX_VM_STATUSES)):
+            self._collect_device(vm)
 
         for address in self.addresses.values():
-            address.interface = self.interfaces[address.interface.id]
-            if address.interface.device.name not in self.devices:
-                logger.warning('Device %s of IP %s not in devices, skipping.', address.interface.device.name, address)
+            try:
+                address.interface = self.physical_interfaces[address.interface.id]
+                name = address.interface.device.name
+                physical = True
+            except KeyError:
+                address.interface = self.virtual_interfaces[address.interface.id]
+                name = address.interface.virtual_machine.name
+                physical = False
+
+            if name not in self.devices:
+                logger.warning('Device %s of IP %s not in devices, skipping.', name, address)
                 continue
 
             if not address.dns_name:
-                logger.warning('%s:%s has no DNS name', address.interface.device.name, address.interface.name)
+                logger.warning('%s:%s has no DNS name', name, address.interface.name)
                 continue
 
-            self.devices[address.interface.device.name]['addresses'].add(address)
+            self.devices[name]['addresses'].add(address)
+            self.devices[name]['physical'] = physical
 
         logger.info('Gathered %d devices from Netbox', len(self.devices))
+
+    def _collect_device(self, device: NetboxDeviceType) -> None:
+        """Collect the given device (physical or virtual) based on its data."""
+        self.devices[device.name]['device'] = device
+        if device.primary_ip4 is not None:
+            self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip4.id])
+        if device.primary_ip6 is not None:
+            self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip6.id])
 
 
 class RecordBase:
@@ -309,7 +331,8 @@ class Records:
         for name, device_data in self.netbox.devices.items():
             for address in device_data['addresses']:
                 hostname, zone = Records._split_dns_name(address.dns_name)
-                records = Records._generate_address_records(zone, hostname, address, device_data['device'])
+                records = Records._generate_address_records(
+                    zone, hostname, address, device_data['device'], device_data['physical'])
                 records_count += len(records)
                 for record in records:
                     self.zones['direct'][zone].append(record)
@@ -341,28 +364,38 @@ class Records:
 
     @staticmethod
     def _generate_address_records(zone: str, hostname: str, address: pynetbox.models.ipam.IpAddresses,
-                                  device: pynetbox.models.dcim.Devices) -> List[ForwardRecord]:
+                                  device: NetboxDeviceType, physical: bool) -> List[ForwardRecord]:
         """Generate Record objects for the given address.
 
         Arguments:
             zone (str): the zone name.
+            hostname (str): the hostname.
             address (pynetbox.models.ipam.IpAddresses): the Netbox address to use to generate the record.
-            device (pynetbox.models.dcim.Devices): the Netbox device the address belongs to.
+            device (NetboxDeviceType): the Netbox device the address belongs to, either physical or virtual.
+            physical (bool): if it's a physical device or not.
 
         Returns:
             list: a list of ForwardRecord objects related to the given address.
 
         """
         records = []
-        if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES or device.device_role.slug != 'server':
-            # Some states must have only the mgmt record for the asset tag
-            records.append(ForwardRecord(zone, hostname, address.address))
+        if physical:
+            if device.device_role.slug == 'server':
+                if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES:
+                    # Primary/management with hostname IPs defined only in certain Netbox states
+                    records.append(ForwardRecord(zone, hostname, address.address))
 
-        # Generate the additional asset tag mgmt record only if the Netbox name is not the asset tag already
-        if (address.interface.mgmt_only and device.device_role.slug == 'server'
-                and (device.name.lower() != device.asset_tag.lower()
-                     or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
-            records.append(ForwardRecord(zone, device.asset_tag.lower(), address.address))
+                # Generate the additional asset tag mgmt record only for physical devices for which the hostname is
+                # different from the asset tag.
+                if (address.interface.mgmt_only and (
+                        device.name.lower() != device.asset_tag.lower()
+                        or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
+                    records.append(ForwardRecord(zone, device.asset_tag.lower(), address.address))
+
+            else:
+                records.append(ForwardRecord(zone, hostname, address.address))
+        else:
+            records.append(ForwardRecord(zone, hostname, address.address))
 
         return records
 
