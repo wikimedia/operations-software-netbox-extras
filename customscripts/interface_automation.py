@@ -33,7 +33,6 @@ class CreateManagementInterface(Script):
             self.log_failure(message)
             return message
         self.log_info("Selecting address from network {}".format(prefix.prefix))
-        available_ips = iter(prefix.get_available_ips())
 
         # disable 0net skipping on frack
         if device.tenant and device.tenant.slug == 'fr-tech':
@@ -43,35 +42,30 @@ class CreateManagementInterface(Script):
             zeroth_net = list(ipaddress.ip_network(prefix.prefix).subnets(new_prefix=24))[0]
 
         ip = None
-        for ip in available_ips:
+        for ip in prefix.get_available_ips():
             address = ipaddress.ip_address(ip)
             if zeroth_net is None or address not in zeroth_net:
                 break
-            else:
-                ip = None
-
-        if ip:
-            # create IP address as child of appropriate prefix
-            newip = IPAddress(
-                address="{}/{}".format(ip, prefix.prefix.prefixlen),
-                status=IPAddressStatusChoices.STATUS_ACTIVE,
-                family=prefix.family,
-            )
-            # save ASAP
-            newip.save()
-            newip.vrf = prefix.vrf.pk if prefix.vrf else None
-            # assign ip to interface
-            newip.interface = interface
-            newip.tenant = device.tenant
-            newip.save()
-
-            message = "Created IP {} for mgmt on device {}".format(newip, device.name)
-            self.log_success(message)
+        else:
+            message = "Not enough IPs to allocate one on prefix {}".format(prefix.prefix)
+            self.log_failure(message)
             return message
 
-        # fall through to failure
-        message = "Not enough IPs to allocate one on prefix {}".format(prefix.prefix)
-        self.log_failure(message)
+        # create IP address as child of appropriate prefix
+        newip = IPAddress(
+            address="{}/{}".format(ip, prefix.prefix.prefixlen),
+            status=IPAddressStatusChoices.STATUS_ACTIVE,
+        )
+        # save ASAP
+        newip.save()
+        newip.vrf = prefix.vrf.pk if prefix.vrf else None
+        # assign ip to interface
+        newip.interface = interface
+        newip.tenant = device.tenant
+        newip.save()
+
+        message = "Created IP {} for mgmt on device {}".format(newip, device.name)
+        self.log_success(message)
         return message
 
     def run(self, data):
