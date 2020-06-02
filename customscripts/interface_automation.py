@@ -1,97 +1,317 @@
 import ipaddress
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Q
 
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
-from ipam.choices import IPAddressStatusChoices
-from ipam.models import Prefix, IPAddress
-from extras.scripts import Script, StringVar
+from extras.constants import LOG_LEVEL_CODES
+from extras.scripts import BooleanVar, ChoiceVar, ObjectVar, Script, StringVar
+from ipam.models import IPAddress, Prefix, VLAN
+from utilities.forms import APISelect
 
 
-class CreateManagementInterface(Script):
+# Switch to True once all primary IPs are imported into Netbox
+PRIMARY_IPS_ENABLED = False
+MIGRATED_MGMT_SITES = ("ulsfo", "eqsin")
+MIGRATED_PRIMARY_SITES = ()
+MGMT_IFACE_NAME = "mgmt"
+PRIMARY_IFACE_NAME = "##PRIMARY##"
+VLAN_TYPES = (
+    "",  # Default value
+    "public",
+    "private",
+    "analytics",
+    "cloud-hosts",
+)
+VLAN_POP_TYPES = ("public", "private")
+VLAN_QUERY_FILTERS = [~Q(name__istartswith=f"{i}1-") for i in VLAN_TYPES if i]
+FRACK_TENANT_SLUG = "fr-tech"
+
+
+class AssignIPs(Script):
+
     class Meta:
-        name = "Create management interface"
-        description = "Create a management interface for specified device(s) and assign an IP address(es)."
+        name = "Add interfaces and IPs to devices"
+        description = ("Create a management and primary interface for the specified device(s) and assign them the"
+                       "necessary IP addresses.")
 
-    device = StringVar(
-        description="Device name(s) to add management interface(s) to (space separated)",
+    devices = StringVar(
+        label="Device(s)",
+        description="Device name(s), space separated if more than one",
     )
 
-    def _add_ip_to_interface(self, device, interface):
-        """Create an IP address for a device if appropriate from the correct prefix."""
-        if interface.ip_addresses.all():
-            message = "refusing to create additional IP address for mgmt on {}".format(device.name)
-            self.log_info(message)
-            return message
+    if PRIMARY_IPS_ENABLED:  # Temporary to hide unnecessary parameters at the moment
+        skip_ipv6_dns = BooleanVar(
+            label="Skip IPv6 DNS records",
+            description=("Skip the generation of the IPv6 DNS records. Enable if the devices don't yet fully support "
+                         "IPv6."),
+        )
+        vlan_type = ChoiceVar(
+            required=False,
+            choices=[(value, value if value else "-" * 9) for value in VLAN_TYPES],
+            label="VLAN Type",
+            description=("The VLAN type to use for assigning the primary IPs. The specific VLAN will be automatically "
+                         "chosen based on the device. For not yet supported cases use the VLAN parameter below. The "
+                         "VLAN Type and VLAN parameters are mutually exclusive."),
+        )
+        vlan = ObjectVar(
+            required=False,
+            label="VLAN",
+            description=("Select the specific VLAN if the VLAN Type parameter doesn't support the device's VLAN. The "
+                         "VLAN Type and VLAN parameters are mutually exclusive."),
+            queryset=VLAN.objects.filter(*VLAN_QUERY_FILTERS, status="active", group__name="production"),
+            widget=APISelect(
+                api_url="/api/ipam/vlans/",
+                display_field="name",
+                additional_query_params={
+                    "group": "production",
+                    "name__nisw": [f"{i}1-" for i in VLAN_TYPES if i],
+                }
+            ),
+        )
+
+    def run(self, data):
+        """Run the script and return all the log messages."""
+        self.log_info(f"Called with parameters: {data}")
+        self._run_script(data)
+        return self._format_logs()
+
+    def _run_script(self, data):
+        """Run the script."""
+        if PRIMARY_IPS_ENABLED and not data["vlan_type"] and not data["vlan"]:
+            self.log_failure("One parameter between VLAN Type and VLAN must be specified, aborting.")
+            return
+        if PRIMARY_IPS_ENABLED and data["vlan_type"] and data["vlan"]:
+            self.log_failure("Only one parameter between VLAN Type and VLAN can be specified, aborting.")
+            return
+
+        devices = Device.objects.filter(name__in=data["devices"].split())  # Additional checks performed below
+        if not devices:
+            self.log_failure(f"No devices found for: {data['devices']}.")
+            return
+
+        for device in devices:
+            self._process_device(device, data)
+
+    def _process_device(self, device, data):
+        """Process a single device."""
+        self.log_info(f"Processing device {device.name}")
+        if device.status not in ("inventory", "planned"):
+            self.log_failure(
+                f"Skipping device {device.name} with status {device.status}, expected Inventory or Planned."
+            )
+            return
+
+        if not device.rack:
+            self.log_failure(f"Skipping device {device.name}, missing rack information.")
+            return
+
+        if device.device_role.slug != "server":
+            self.log_failure(
+                f"Skipping device {device.name} with role {device.device_role}, only servers are supported."
+            )
+            return
+
+        ifaces = device.interfaces.all()
+        if ifaces:
+            ifaces_list = ", ".join(i.name for i in ifaces)
+            self.log_failure(f"Skipping device {device.name}, interfaces already defined: {ifaces_list}")
+            return
+
+        # Assigning first the primary IPs as it can fail some validation step
+        if PRIMARY_IPS_ENABLED:
+            if data["vlan_type"]:
+                vlan = self._get_vlan(data["vlan_type"], device)
+                if vlan is None:
+                    return
+            else:
+                vlan = data["vlan"]
+
+            if not self._is_vlan_valid(vlan, device):
+                return
+
+            self._assign_primary(device, vlan, skip_ipv6_dns=data["skip_ipv6_dns"])
+
+        self._assign_mgmt(device)
+
+    def _format_logs(self):
+        """Return all log messages properly formatted."""
+        return "\n".join(
+            "[{level}] {msg}".format(level=LOG_LEVEL_CODES.get(level), msg=message) for level, message in self.log
+        )
+
+    def _assign_mgmt(self, device):
+        """Create a management interface in the device and assign to it a management IP."""
+        iface = self._add_iface(MGMT_IFACE_NAME, device, mgmt=True)
 
         # determine prefix appropriate to site of device
         try:
-            prefix = Prefix.objects.get(site=device.site, role__slug="management", tenant=device.tenant)
+            prefix = Prefix.objects.get(
+                site=device.site, role__slug="management", tenant=device.tenant, status="active"
+            )
         except ObjectDoesNotExist:
-            message = "Can't find prefix for site {} on device {}".format(device.site.slug, device.name)
-            self.log_failure(message)
-            return message
-        self.log_info("Selecting address from network {}".format(prefix.prefix))
+            self.log_failure(f"Can't find management prefix for device {device.name} on site {device.site.slug}.")
+            return
 
-        # disable 0net skipping on frack
-        if device.tenant and device.tenant.slug == 'fr-tech':
-            zeroth_net = None
+        self.log_info(f"Selecting address from prefix {prefix.prefix}")
+        ip_address = prefix.get_first_available_ip()
+        if ip_address is None:
+            self.log_failure(f"Unable to find an available IP in prefix {prefix.prefix}")
+            return
+
+        if device.tenant and device.tenant.slug == FRACK_TENANT_SLUG:
+            dns_name = f"{device.name}.mgmt.frack.{device.site.slug}.wmnet"
         else:
-            # skip the first /24 net as this is reserved for network devices
-            zeroth_net = list(ipaddress.ip_network(prefix.prefix).subnets(new_prefix=24))[0]
+            dns_name = f"{device.name}.mgmt.{device.site.slug}.wmnet"
 
-        ip = None
-        for ip in prefix.get_available_ips():
-            address = ipaddress.ip_address(ip)
-            if zeroth_net is None or address not in zeroth_net:
-                break
+        self._add_ip(ip_address, dns_name, prefix, iface, device)
+
+        if device.site.slug not in MIGRATED_MGMT_SITES:
+            ip = ipaddress.ip_interface(ip_address).ip
+            self.log_warning(f"DC {device.site.slug} has not yet been migrated for management records. Manual "
+                             f"commit in the operations/dns repository is required. See the "
+                             f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
+                             f"\n\n    IP:  {ip}\n    PTR: {ip.reverse_pointer}\n    DNS: {dns_name}")
+
+    def _assign_primary(self, device, vlan, *, skip_ipv6_dns=False):
+        """Create a primary interface in the device and assign to it an IPv4, a mapped IPv6 and related DNS records."""
+        prefixes_v4 = vlan.prefixes.filter(prefix__family=4, status="active")  # Must always be one
+        prefixes_v6 = vlan.prefixes.filter(prefix__family=6, status="active")  # Can either be one or not exists
+        if len(prefixes_v4) != 1 or len(prefixes_v6) > 1:
+            self.log_failure(f"Unsupported case, found {len(prefixes_v4)} v4 prefixes and {len(prefixes_v6)} v6 "
+                             f"prefixes, expected 1 and 0 or 1 respectively.")
+            return
+
+        prefix_v4 = prefixes_v4[0]
+        prefix_v6 = None
+        if prefixes_v6:
+            prefix_v6 = prefixes_v6[0]
+
+        self.log_info(f"Selecting address from prefix {prefix_v4.prefix}")
+
+        ip_address = prefix_v4.get_first_available_ip()
+        if ip_address is None:
+            self.log_failure(f"Unable to find an available IP in prefix {prefix_v4.prefix}")
+            return
+
+        iface = self._add_iface(PRIMARY_IFACE_NAME, device, mgmt=False)
+
+        if prefix_v4.prefix.is_private():
+            if device.tenant and device.tenant.slug == FRACK_TENANT_SLUG:
+                dns_name = f"{device.name}.frack.{device.site.slug}.wmnet"
+            else:
+                dns_name = f"{device.name}.{device.site.slug}.wmnet"
         else:
-            message = "Not enough IPs to allocate one on prefix {}".format(prefix.prefix)
-            self.log_failure(message)
-            return message
+            dns_name = f"{device.name}.wikimedia.org"
 
-        # create IP address as child of appropriate prefix
-        newip = IPAddress(
-            address="{}/{}".format(ip, prefix.prefix.prefixlen),
-            status=IPAddressStatusChoices.STATUS_ACTIVE,
-            dns_name="{name}.mgmt.{site}.wmnet".format(name=device.name, site=device.site.slug),
+        ip_v4 = self._add_ip(ip_address, dns_name, prefix_v4, iface, device)
+        device.primary_ip4 = ip_v4
+        device.save()
+        self.log_success(f"Marked IPv4 address {ip_v4} as primary IPv4 for device {device.name}")
+
+        if device.site.slug not in MIGRATED_PRIMARY_SITES:
+            ip_address_v4 = ipaddress.ip_interface(ip_v4).ip
+            self.log_warning(f"DC {device.site.slug} has not yet been migrated for primary records. Manual "
+                             f"commit in the operations/dns repository is required. See "
+                             f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
+                             f"\n\n    IPv4:  {ip_address_v4}\n    PTRv4: {ip_address_v4.reverse_pointer}"
+                             f"\n    DNSv4: {dns_name}")
+
+        if prefix_v6 is None:
+            self.log_warning(f"No IPv6 prefix found for VLAN {vlan.name}, skipping IPv6 allocation.")
+            return
+
+        dns_name_v6 = dns_name
+        if skip_ipv6_dns:
+            self.log_warning("Not assigning DNS name to the IPv6 address as requested.")
+            dns_name_v6 = ""
+
+        # Generate the IPv6 address embedding the IPv4 address, for example from an IPv4 address 10.0.0.1 and an
+        # IPv6 prefix 2001:db8:3c4d:15::/64 the mapped IPv6 address 2001:db8:3c4d:15:10:0:0:1/64 is generated.
+        prefix_v6_base, prefix_v6_mask = str(prefix_v6).split("/")
+        mapped_v4 = str(ip_v4).split('/')[0].replace(".", ":")
+        ipv6_address = f"{prefix_v6_base.rstrip(':')}:{mapped_v4}/{prefix_v6_mask}"
+        ip_v6 = self._add_ip(ipv6_address, dns_name_v6, prefix_v6, iface, device)
+        device.primary_ip6 = ip_v6
+        device.save()
+        self.log_success(f"Marked IPv6 address {ip_v6} as primary IPv6 for device {device.name}")
+
+        if device.site.slug not in MIGRATED_PRIMARY_SITES and dns_name_v6:
+            ip_address_v6 = ipaddress.ip_interface(ip_v6).ip
+            self.log_warning(f"DC {device.site.slug} has not yet been migrated for primary records. Manual "
+                             f"commit in the operations/dns repository is required. See "
+                             f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
+                             f"\n\n    IPv6:  {ip_address_v6}\n    PTRv6: {ip_address_v6.reverse_pointer}"
+                             f"\n    DNSv6: {dns_name}")
+
+    def _get_vlan(self, vlan_type, device):
+        """Find and return the appropriate VLAN that matches the type and device location."""
+        if device.site.slug in ("eqiad", "codfw"):
+            # TODO: add support for additional VLANs of a given type (e.g. private2)
+            vlan_name = f"{vlan_type}1-{device.rack.group.slug.split('-')[-1]}-{device.site.slug}"
+        else:
+            if vlan_type not in VLAN_POP_TYPES:
+                self.log_failure(f"VLAN type {vlan_type} not available in site {device.site.slug}, skipping")
+                return
+
+            vlan_name = f"{vlan_type}1-{device.site.slug}"
+
+        try:
+            return VLAN.objects.get(name=vlan_name, status="active")
+        except ObjectDoesNotExist:
+            self.log_failure(f"Unable to find VLAN with name {vlan_name}")
+
+    def _is_vlan_valid(self, vlan, device):
+        """Try to ensure that the VLAN matches the device location."""
+        if vlan.site != device.site:
+            self.log_failure(
+                f"Skipping device {device.name}, mismatch site for VLAN {vlan.name}: "
+                f"{device.site.slug} (device) != {vlan.site.slug} (VLAN)."
+            )
+            return False
+
+        if vlan.tenant != device.tenant:
+            self.log_failure(
+                f"Skipping device {device.name}, mismatch tenant for VLAN {vlan.name}: "
+                f"{device.tenant} (device) != {vlan.tenant} (VLAN)"
+            )
+            return False
+
+        # Attempt to validate the row
+        row = device.rack.group.slug.split("-")[-1]
+        possible_rows = [part for part in vlan.name.split("-") if len(part) == 1]
+        if len(possible_rows) == 1:
+            if row != possible_rows[0]:
+                self.log_failure(
+                    f"Skipping device {device.name}, mismatch row for VLAN {vlan.name}: "
+                    f"{row} (device) != {possible_rows[0]} (VLAN)"
+                )
+                return False
+        else:
+            self.log_warning(f"Unable to verify if VLAN {vlan.name} matches row {row} of device {device.name}")
+
+        return True
+
+    def _add_iface(self, name, device, *, mgmt=False):
+        """Add an interface to the device."""
+        iface = Interface(name=name, mgmt_only=mgmt, device=device, type=InterfaceTypeChoices.TYPE_1GE_FIXED)
+        iface.save()
+        self.log_success(f"Created interface {name} on device {device.name} (mgmt={mgmt})")
+        return iface
+
+    def _add_ip(self, address, dns_name, prefix, iface, device):
+        """Assign an IP address to the interface."""
+        address = IPAddress(
+            address=address,
+            status="active",
+            dns_name=dns_name,
             vrf=prefix.vrf.pk if prefix.vrf else None,
-            interface=interface,
+            interface=iface,
             tenant=device.tenant,
         )
-        newip.save()
+        address.save()
+        self.log_success(f"Assigned IPv{prefix.family} {address} to interface {iface.name} on device {device.name} "
+                         f"with DNS name '{dns_name}'.")
 
-        message = "Created IP {} for mgmt on device {}".format(newip, device.name)
-        self.log_success(message)
-        return message
-
-    def run(self, data):
-        """Create a 'mgmt' interface, and, if requested, allocate an appropriate IP address."""
-        # we don't filter status or role here so we can report later on rather that just not finding them
-        devices = Device.objects.filter(name__in=data['device'].split())
-        messages = []
-        if not devices:
-            message = "No devices found for specified list."
-            self.log_failure(message)
-            return message
-
-        for device in devices:
-            self.log_info("processing device {}".format(device.name))
-            if (device.status not in ("inventory", "planned")):
-                self.log_failure("device {} is not in state Inventory or Planned, skipping".format(device))
-                continue
-            if (device.device_role.slug != "server"):
-                self.log_failure("device {} is not a server, skipping".format(device))
-                continue
-            try:
-                mgmt = device.interfaces.get(name='mgmt')
-                self.log_info("mgmt already exists for device {}".format(device.name))
-            except ObjectDoesNotExist:
-                # create interface of name mgmt, is_mgmt flag set of type 1G Ethernet
-                mgmt = Interface(name="mgmt", mgmt_only=True, device=device, type=InterfaceTypeChoices.TYPE_1GE_FIXED)
-                mgmt.save()
-
-            messages.append(self._add_ip_to_interface(device, mgmt))
-
-        return "\n".join(messages)
+        return address
