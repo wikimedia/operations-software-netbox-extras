@@ -55,13 +55,11 @@ class CreateManagementInterface(Script):
         newip = IPAddress(
             address="{}/{}".format(ip, prefix.prefix.prefixlen),
             status=IPAddressStatusChoices.STATUS_ACTIVE,
+            dns_name="{name}.mgmt.{site}.wmnet".format(name=device.name, site=device.site.slug),
+            vrf=prefix.vrf.pk if prefix.vrf else None,
+            interface=interface,
+            tenant=device.tenant,
         )
-        # save ASAP
-        newip.save()
-        newip.vrf = prefix.vrf.pk if prefix.vrf else None
-        # assign ip to interface
-        newip.interface = interface
-        newip.tenant = device.tenant
         newip.save()
 
         message = "Created IP {} for mgmt on device {}".format(newip, device.name)
