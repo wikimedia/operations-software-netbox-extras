@@ -13,7 +13,7 @@ from utilities.forms import APISelect
 
 # Switch to True once all primary IPs are imported into Netbox
 PRIMARY_IPS_ENABLED = False
-MIGRATED_MGMT_SITES = ("ulsfo", "eqsin")
+MIGRATED_MGMT_SITES = ("ulsfo", "eqsin", "esams")
 MIGRATED_PRIMARY_SITES = ()
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"
