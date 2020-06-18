@@ -125,7 +125,7 @@ class Netbox:
     def collect(self) -> None:
         """Collect all the data from Netbox. Must be called before using the class."""
         logger.info('Gathering devices, interfaces, addresses and prefixes from Netbox')
-        self.addresses = {addr.id: addr for addr in self.api.ipam.ip_addresses.all()}
+        self.addresses = {addr.id: addr for addr in self.api.ipam.ip_addresses.filter(status='active')}
         self.physical_interfaces = {interface.id: interface for interface in self.api.dcim.interfaces.all()}
         self.virtual_interfaces = {interface.id: interface for interface in self.api.virtualization.interfaces.all()}
         self.prefixes = {ipaddress.ip_network(prefix.prefix) for prefix in self.api.ipam.prefixes.all()}
