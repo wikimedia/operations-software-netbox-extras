@@ -40,7 +40,7 @@ class OfflineDevice(Script):
                 address.delete()
 
             self.log_info('Deleting interface {iface}'.format(iface=interface))
-            interface.delete
+            interface.delete()
 
         device.save()
         return ('Successfully offlined device {name}, all interfaces and related IPs have been deleted').format(
