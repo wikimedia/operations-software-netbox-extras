@@ -6,7 +6,8 @@ class OfflineDevice(Script):
 
     class Meta:
         name = 'Offline a device with extra actions'
-        description = 'Set the device status to Offline (unracked) and delete all interfaces and related IP addresses.'
+        description = ('Set the device status to Offline (unracked), unset its position and delete all interfaces '
+                       'and related IP addresses.')
 
     device_name = StringVar(label='Device name', description='Device to be offlined')
 
@@ -29,8 +30,10 @@ class OfflineDevice(Script):
             raise RuntimeError('Device {name} is in {status} status, only decommissioned devices '
                                'can be offlined.'.format(name=device, status=device.status))
 
-        self.log_info('Setting device {device} status to Offline'.format(device=device))
+        self.log_info('Setting device {device} status to Offline and unset rack/unit position'.format(device=device))
         device.status = 'offline'
+        device.rack = None
+        device.position = None
         device.save()  # Avoid any race condition with DNS generations scripts
 
         for interface in device.interfaces.all():
