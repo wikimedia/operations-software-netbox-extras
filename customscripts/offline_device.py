@@ -44,6 +44,8 @@ class OfflineDevice(Script):
         device.rack = None
         device.position = None
         device.face = ''
+        device.primary_ip4 = None
+        device.primary_ip6 = None
         device.save()  # Avoid any race condition with DNS generations scripts
 
         for interface in device.interfaces.all():
