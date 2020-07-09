@@ -19,10 +19,10 @@ INCLUDE_STATUSES = (DeviceStatusChoices.STATUS_ACTIVE, DeviceStatusChoices.STATU
 
 # Netbox roles to check (slugs)
 # These are checked against the devices we get from LibreNMS
-INCLUDE_DEVICE_ROLES_LNMS_CHECK = ("asw", "msw", "cr", "mr", "pfw", "pdu", "scs")
+INCLUDE_DEVICE_ROLES_LNMS_CHECK = ("asw", "msw", "cr", "mr", "pfw", "pdu", "scs", "cloudsw")
 # These are used in every other check (the above minus scs which report incorrectly
 # in LibreNMS for serial numbers and device types.
-INCLUDE_DEVICE_ROLES = ("asw", "msw", "cr", "mr", "pfw", "pdu")
+INCLUDE_DEVICE_ROLES = ("asw", "msw", "cr", "mr", "pfw", "pdu", "cloudsw")
 
 # Sites to exclude
 EXCLUDE_SITES = ()

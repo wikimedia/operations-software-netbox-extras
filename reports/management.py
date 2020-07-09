@@ -8,7 +8,7 @@ from extras.reports import Report
 
 # These are the device type slugs we care about.
 # Currently we alert on Core Routers and Core/Access Switch
-DEVICE_ROLES = ("cr", "asw", "mr", "pfw")
+DEVICE_ROLES = ("cr", "asw", "mr", "pfw", "cloudsw")
 
 # These are points of presence slugs that we ignore for the purposes of this report.
 # Network POPs don't have a console server
