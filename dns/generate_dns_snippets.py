@@ -162,10 +162,12 @@ class Netbox:
     def _collect_device(self, device: NetboxDeviceType) -> None:
         """Collect the given device (physical or virtual) based on its data."""
         self.devices[device.name]['device'] = device
-        if device.primary_ip4 is not None:
-            self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip4.id])
-        if device.primary_ip6 is not None:
-            self.devices[device.name]['addresses'].add(self.addresses[device.primary_ip6.id])
+        for primary in (device.primary_ip4, device.primary_ip6):
+            if primary is not None:
+                if self.addresses[primary.id].dns_name:
+                    self.devices[device.name]['addresses'].add(self.addresses[primary.id])
+                else:
+                    logger.error('Primary address %s for device %s is missing a DNS name', primary, device.name)
 
 
 class RecordBase:
