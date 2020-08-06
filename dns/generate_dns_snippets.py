@@ -24,10 +24,14 @@ from typing import Any, DefaultDict, Dict, List, Mapping, Optional, Sequence, Se
 import git
 import pynetbox
 
+from requests import PreparedRequest, Response, Session
+from requests.adapters import HTTPAdapter
+
 
 logger = logging.getLogger()
 GIT_USER_NAME = 'generate-dns-snippets'
 GIT_USER_EMAIL = 'noc@wikimedia.org'
+NO_DEVICE_NAME = 'UNASSIGNED_ADDRESSES'
 # The second part is the base64 encode of 'snippets' to not easily match any existing directory prefix.
 TMP_DIR_PREFIX = 'dns-c25pcHBldHM-'
 EXCEPTION_RETURN_CODE = 2
@@ -100,6 +104,32 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
+class TimeoutHTTPAdapter(HTTPAdapter):
+
+    def __init__(self, **kwargs: Any):
+        """Initialize the adapter with a custom timeout.
+
+        Params:
+            As required by requests's HTTPAdapter:
+            https://2.python-requests.org/en/master/api/#requests.adapters.HTTPAdapter
+
+        """
+        self.timeout = 900
+        super().__init__(**kwargs)
+
+    def send(self, request: PreparedRequest, **kwargs: Any) -> Response:  # type: ignore
+        """Override the send method to pass the adapter.
+
+        Params:
+            As required by requests's HTTPAdapter:
+            https://2.python-requests.org/en/master/api/#requests.adapters.HTTPAdapter.send
+            The type ignore is needed unless the exact signature is replicated.
+
+        """
+        kwargs['timeout'] = self.timeout
+        return super().send(request, **kwargs)
+
+
 class Netbox:
     """Class to manage all data from Netbox."""
 
@@ -115,8 +145,15 @@ class Netbox:
             token (str): the Netbox API token.
 
         """
+        adapter = TimeoutHTTPAdapter()
+        session = Session()
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         self.api = pynetbox.api(url=url, token=token)
+        self.api.http_session = session
         self.devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
+        self.devices[NO_DEVICE_NAME]['device'] = None
         self.addresses = {}  # type: dict
         self.physical_interfaces = {}  # type: dict
         self.virtual_interfaces = {}  # type: dict
@@ -137,22 +174,30 @@ class Netbox:
             self._collect_device(vm)
 
         for address in self.addresses.values():
-            try:
-                address.interface = self.physical_interfaces[address.interface.id]
-                name = address.interface.device.name
-                physical = True
-            except KeyError:
-                address.interface = self.virtual_interfaces[address.interface.id]
-                name = address.interface.virtual_machine.name
+            if address.interface is None:
+                name = NO_DEVICE_NAME
                 physical = False
 
-            if name not in self.devices:
-                logger.warning('Device %s of IP %s not in devices, skipping.', name, address)
-                continue
+                if not address.dns_name:
+                    logger.warning('%s:%s has no DNS name', name, address)
+                    continue
+            else:
+                try:
+                    address.interface = self.physical_interfaces[address.interface.id]
+                    name = address.interface.device.name
+                    physical = True
+                except KeyError:
+                    address.interface = self.virtual_interfaces[address.interface.id]
+                    name = address.interface.virtual_machine.name
+                    physical = False
 
-            if not address.dns_name:
-                logger.warning('%s:%s has no DNS name', name, address.interface.name)
-                continue
+                if name not in self.devices:
+                    logger.warning('Device %s of IP %s not in devices, skipping.', name, address)
+                    continue
+
+                if not address.dns_name:
+                    logger.warning('%s:%s has no DNS name', name, address.interface.name)
+                    continue
 
             self.devices[name]['addresses'].add(address)
             self.devices[name]['physical'] = physical
@@ -187,12 +232,22 @@ class RecordBase:
         self.interface = ipaddress.ip_interface(ip_interface)
         self.ip = self.interface.ip
 
+    def __hash__(self) -> int:
+        """Object hash.
+
+        Params:
+            According to Python's data model:
+            https://docs.python.org/3/reference/datamodel.html#object.__hash__
+
+        """
+        return hash((self.zone, self.hostname, self.ip))
+
     def __eq__(self, other: object) -> bool:
         """Equality operator.
 
         Params:
             According to Python's data model:
-            https://docs.python.org/3/reference/datamodel.html?highlight=__lt__#object.__eq__
+            https://docs.python.org/3/reference/datamodel.html#object.__eq__
 
         """
         if not isinstance(other, RecordBase):
@@ -215,7 +270,7 @@ class RecordBase:
 
     @abstractmethod
     def to_tuple(self) -> Tuple:
-        """Tuple representatin suitable to be used for sorting records.
+        """Tuple representation suitable to be used for sorting records.
 
         Returns:
             tuple: the tuple representation.
@@ -249,13 +304,13 @@ class ReverseRecord(RecordBase):
         return '{ptr} 1H IN PTR {hostname}.'.format(ptr=self.pointer.ljust(3), hostname=self.hostname)
 
     def to_tuple(self) -> Tuple:
-        """Tuple representatin suitable to be used for sorting records.
+        """Tuple representation suitable to be used for sorting records.
 
         Returns:
             tuple: the tuple representation.
 
         """
-        return tuple([int(i) for i in self.pointer.split('.')] + [self.hostname])  # type: ignore
+        return tuple([int(i, 16) for i in self.pointer.split('.')] + [self.hostname])  # type: ignore
 
 
 class ForwardRecord(RecordBase):
@@ -274,7 +329,7 @@ class ForwardRecord(RecordBase):
             hostname=self.hostname.ljust(40), type=record_type, ip=self.ip.compressed)
 
     def to_tuple(self) -> Tuple:
-        """Tuple representatin suitable to be used for sorting records.
+        """Tuple representation suitable to be used for sorting records.
 
         Returns:
             tuple: the tuple representation.
@@ -306,7 +361,7 @@ class ForwardRecord(RecordBase):
                 if max_prefix.prefixlen > 24:
                     zone = max_prefix.reverse_pointer.replace('/', '-')
                 else:
-                    zone = max_prefix.network_address.reverse_pointer
+                    zone = max_prefix.network_address.reverse_pointer.split('.', 1)[1]
 
         return ReverseRecord(zone, '.'.join((self.hostname, self.zone)), str(self.interface), pointer)
 
@@ -324,7 +379,7 @@ class Records:
         """
         self.netbox = netbox
         self.min_records = min_records
-        self.zones = {'direct': defaultdict(list), 'reverse': defaultdict(list)}  # type: Dict
+        self.zones = {'direct': defaultdict(set), 'reverse': defaultdict(set)}  # type: Dict
 
     def generate(self) -> None:
         """Generate all DNS record based on Netbox data."""
@@ -337,9 +392,9 @@ class Records:
                     zone, hostname, address, device_data['device'], device_data['physical'])
                 records_count += len(records)
                 for record in records:
-                    self.zones['direct'][zone].append(record)
+                    self.zones['direct'][zone].add(record)
                     reverse = record.get_reverse(self.netbox.prefixes)
-                    self.zones['reverse'][reverse.zone].append(reverse)
+                    self.zones['reverse'][reverse.zone].add(reverse)
 
         logger.info('Generated %d direct and reverse records (%d each) in %d direct zones and %d reverse zones',
                     records_count * 2, records_count, len(self.zones['direct']), len(self.zones['reverse']))
@@ -366,7 +421,7 @@ class Records:
 
     @staticmethod
     def _generate_address_records(zone: str, hostname: str, address: pynetbox.models.ipam.IpAddresses,
-                                  device: NetboxDeviceType, physical: bool) -> List[ForwardRecord]:
+                                  device: Optional[NetboxDeviceType], physical: bool) -> List[ForwardRecord]:
         """Generate Record objects for the given address.
 
         Arguments:
@@ -381,23 +436,19 @@ class Records:
 
         """
         records = []
-        if physical:
-            if device.device_role.slug == 'server':
-                if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES:
-                    # Primary/management with hostname IPs defined only in certain Netbox states
-                    records.append(ForwardRecord(zone, hostname, address.address))
-
-                # Generate the additional asset tag mgmt record only for physical devices for which the hostname is
-                # different from the asset tag.
-                if (address.interface.mgmt_only and (
-                        device.name.lower() != device.asset_tag.lower()
-                        or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
-                    records.append(ForwardRecord(zone, device.asset_tag.lower(), address.address))
-
-            else:
-                records.append(ForwardRecord(zone, hostname, address.address))
-        else:
+        if not physical or device is None or device.device_role.slug != 'server':
             records.append(ForwardRecord(zone, hostname, address.address))
+        else:
+            if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES:
+                # Primary/management with hostname IPs defined only in certain Netbox states
+                records.append(ForwardRecord(zone, hostname, address.address))
+
+            # Generate the additional asset tag mgmt record only for physical devices for which the hostname is
+            # different from the asset tag.
+            if (address.interface.mgmt_only and (
+                    device.name.lower() != device.asset_tag.lower()
+                    or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
+                records.append(ForwardRecord(zone, device.asset_tag.lower(), address.address))
 
         return records
 
@@ -413,11 +464,7 @@ class Records:
 
         """
         parts = dns_name.strip().split('.')
-        max_len = 2
-        if 'frack' in parts:
-            max_len += 1
-        if 'mgmt' in parts:
-            max_len += 1
+        max_len = 2 + sum(1 for i in ('frack', 'mgmt', 'svc') if i in parts)
 
         split_len = min(len(parts) - 1, max_len)
         hostname = '.'.join(parts[:-split_len])
