@@ -168,10 +168,10 @@ class Netbox:
         self.prefixes = {ipaddress.ip_network(prefix.prefix) for prefix in self.api.ipam.prefixes.all()}
 
         for device in self.api.dcim.devices.filter(status=list(Netbox.NETBOX_DEVICE_STATUSES)):
-            self._collect_device(device)
+            self._collect_device(device, True)
 
         for vm in self.api.virtualization.virtual_machines.filter(status=list(Netbox.NETBOX_VM_STATUSES)):
-            self._collect_device(vm)
+            self._collect_device(vm, False)
 
         for address in self.addresses.values():
             if address.interface is None:
@@ -204,9 +204,10 @@ class Netbox:
 
         logger.info('Gathered %d devices from Netbox', len(self.devices))
 
-    def _collect_device(self, device: NetboxDeviceType) -> None:
+    def _collect_device(self, device: NetboxDeviceType, physical: bool) -> None:
         """Collect the given device (physical or virtual) based on its data."""
         self.devices[device.name]['device'] = device
+        self.devices[device.name]['physical'] = physical
         for primary in (device.primary_ip4, device.primary_ip6):
             if primary is not None:
                 if self.addresses[primary.id].dns_name:
@@ -445,7 +446,7 @@ class Records:
 
             # Generate the additional asset tag mgmt record only for physical devices for which the hostname is
             # different from the asset tag.
-            if (address.interface.mgmt_only and (
+            if (address.interface is not None and address.interface.mgmt_only and (
                     device.name.lower() != device.asset_tag.lower()
                     or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
                 records.append(ForwardRecord(zone, device.asset_tag.lower(), address.address))
