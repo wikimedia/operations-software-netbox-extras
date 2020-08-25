@@ -45,6 +45,7 @@ MODEL_EXCLUDES = (
             "c2l36te-ycmfam99",  # Smart Link PRO2 (36) - secondary device
             "c2x42ce-2caf2m00",  # Switched Expansion PRO2 - secondary device
             "c2x36te-epaf2m99",  # PRO2 Switched link - secondary device
+            "c2l54ce-ycmfam90",  # Smart Link PRO2 (54) - secondary device
         ),
     )
 )
