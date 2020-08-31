@@ -13,7 +13,6 @@ from utilities.forms import APISelect
 
 # Switch to True once all primary IPs are imported into Netbox
 PRIMARY_IPS_ENABLED = False
-MIGRATED_MGMT_SITES = ("ulsfo", "eqsin", "esams", "codfw")
 MIGRATED_PRIMARY_SITES = ()
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"
@@ -166,13 +165,6 @@ class AssignIPs(Script):
             dns_name = f"{device.name}.mgmt.{device.site.slug}.wmnet"
 
         self._add_ip(ip_address, dns_name, prefix, iface, device)
-
-        if device.site.slug not in MIGRATED_MGMT_SITES:
-            ip = ipaddress.ip_interface(ip_address).ip
-            self.log_warning(f"DC {device.site.slug} has not yet been migrated for management records. Manual "
-                             f"commit in the operations/dns repository is required. See the "
-                             f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
-                             f"\n\n    IP:  {ip}\n    PTR: {ip.reverse_pointer}\n    DNS: {dns_name}")
 
     def _assign_primary(self, device, vlan, *, skip_ipv6_dns=False):
         """Create a primary interface in the device and assign to it an IPv4, a mapped IPv6 and related DNS records."""
