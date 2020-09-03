@@ -134,7 +134,6 @@ class Netbox:
     """Class to manage all data from Netbox."""
 
     NETBOX_DEVICE_STATUSES = ('active', 'planned', 'staged', 'failed', 'inventory', 'decommissioning',)
-    NETBOX_VM_STATUSES = ('active', 'planned', 'staged', 'failed', 'decommissioning',)
     NETBOX_DEVICE_MGMT_ONLY_STATUSES = ('inventory', 'decommissioning')
 
     def __init__(self, url: str, token: str):
@@ -170,7 +169,7 @@ class Netbox:
         for device in self.api.dcim.devices.filter(status=list(Netbox.NETBOX_DEVICE_STATUSES)):
             self._collect_device(device, True)
 
-        for vm in self.api.virtualization.virtual_machines.filter(status=list(Netbox.NETBOX_VM_STATUSES)):
+        for vm in self.api.virtualization.virtual_machines.all():
             self._collect_device(vm, False)
 
         for address in self.addresses.values():
