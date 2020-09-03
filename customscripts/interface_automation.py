@@ -1,5 +1,7 @@
 import ipaddress
 
+from string import ascii_lowercase
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 
@@ -45,6 +47,13 @@ class AssignIPs(Script):
             label="Skip IPv6 DNS records",
             description=("Skip the generation of the IPv6 DNS records. Enable if the devices don't yet fully support "
                          "IPv6."),
+        )
+        cassandra_instances = ChoiceVar(
+            required=False,
+            choices=[(i, i) for i in range(6)],
+            label="How many Cassandra instances",
+            description=("To be set only for hosts that will run Cassandra. This many additional IPv4s will be "
+                         "allocated and their DNS name will be set to $HOSTNAME-a, $HOSTNAME-b, etc."),
         )
         vlan_type = ChoiceVar(
             required=False,
@@ -130,7 +139,8 @@ class AssignIPs(Script):
             if not self._is_vlan_valid(vlan, device):
                 return
 
-            self._assign_primary(device, vlan, skip_ipv6_dns=data["skip_ipv6_dns"])
+            self._assign_primary(device, vlan, skip_ipv6_dns=data["skip_ipv6_dns"],
+                                 cassandra_instances=int(data["cassandra_instances"]))
 
         self._assign_mgmt(device)
 
@@ -166,8 +176,13 @@ class AssignIPs(Script):
 
         self._add_ip(ip_address, dns_name, prefix, iface, device)
 
-    def _assign_primary(self, device, vlan, *, skip_ipv6_dns=False):
-        """Create a primary interface in the device and assign to it an IPv4, a mapped IPv6 and related DNS records."""
+    def _assign_primary(self, device, vlan, *, skip_ipv6_dns=False, cassandra_instances=0):
+        """Create a primary interface in the device and assign to it an IPv4, a mapped IPv6 and related DNS records.
+
+        If Cassandra instances is greater than zero allocate additional IPs for those with hostname
+        $HOSTNAME-a, $HOSTNAME-b, etc.
+
+        """
         prefixes_v4 = vlan.prefixes.filter(prefix__family=4, status="active")  # Must always be one
         prefixes_v6 = vlan.prefixes.filter(prefix__family=6, status="active")  # Can either be one or not exists
         if len(prefixes_v4) != 1 or len(prefixes_v6) > 1:
@@ -191,24 +206,28 @@ class AssignIPs(Script):
 
         if prefix_v4.prefix.is_private():
             if device.tenant and device.tenant.slug == FRACK_TENANT_SLUG:
-                dns_name = f"{device.name}.frack.{device.site.slug}.wmnet"
+                dns_suffix = f"frack.{device.site.slug}.wmnet"
             else:
-                dns_name = f"{device.name}.{device.site.slug}.wmnet"
+                dns_suffix = f"{device.site.slug}.wmnet"
         else:
-            dns_name = f"{device.name}.wikimedia.org"
+            dns_suffix = "wikimedia.org"
 
+        dns_name = f"{device.name}.{dns_suffix}"
         ip_v4 = self._add_ip(ip_address, dns_name, prefix_v4, iface, device)
         device.primary_ip4 = ip_v4
         device.save()
         self.log_success(f"Marked IPv4 address {ip_v4} as primary IPv4 for device {device.name}")
 
         if device.site.slug not in MIGRATED_PRIMARY_SITES:
-            ip_address_v4 = ipaddress.ip_interface(ip_v4).ip
-            self.log_warning(f"DC {device.site.slug} has not yet been migrated for primary records. Manual "
-                             f"commit in the operations/dns repository is required. See "
-                             f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
-                             f"\n\n    IPv4:  {ip_address_v4}\n    PTRv4: {ip_address_v4.reverse_pointer}"
-                             f"\n    DNSv4: {dns_name}")
+            self._print_info_for_commit(device.site.slug, ip_v4, dns_name)
+
+        # Allocate additional IPs
+        for letter in ascii_lowercase[:cassandra_instances]:
+            extra_ip_address = prefix_v4.get_first_available_ip()
+            extra_dns_name = f"{device.name}-{letter}.{dns_suffix}"
+            self._add_ip(extra_ip_address, extra_dns_name, prefix_v4, iface, device)
+            if device.site.slug not in MIGRATED_PRIMARY_SITES:
+                self._print_info_for_commit(device.site.slug, extra_ip_address, extra_dns_name)
 
         if prefix_v6 is None:
             self.log_warning(f"No IPv6 prefix found for VLAN {vlan.name}, skipping IPv6 allocation.")
@@ -230,12 +249,16 @@ class AssignIPs(Script):
         self.log_success(f"Marked IPv6 address {ip_v6} as primary IPv6 for device {device.name}")
 
         if device.site.slug not in MIGRATED_PRIMARY_SITES and dns_name_v6:
-            ip_address_v6 = ipaddress.ip_interface(ip_v6).ip
-            self.log_warning(f"DC {device.site.slug} has not yet been migrated for primary records. Manual "
-                             f"commit in the operations/dns repository is required. See "
-                             f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
-                             f"\n\n    IPv6:  {ip_address_v6}\n    PTRv6: {ip_address_v6.reverse_pointer}"
-                             f"\n    DNSv6: {dns_name}")
+            self._print_info_for_commit(device.site.slug, ip_v6, dns_name_v6)
+
+    def _print_info_for_commit(self, site, address, dns_name):
+        """Print a warning message that a manual commit is required with the details of the record."""
+        ip = ipaddress.ip_interface(address).ip
+        self.log_warning(f"DC {site} has not yet been migrated for primary records. Manual "
+                         f"commit in the operations/dns repository is required. See "
+                         f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
+                         f"\n\n    IPv{ip.version}:  {ip}\n    PTRv{ip.version}: {ip.reverse_pointer}"
+                         f"\n    DNSv{ip.version}: {dns_name}")
 
     def _get_vlan(self, vlan_type, device):
         """Find and return the appropriate VLAN that matches the type and device location."""
