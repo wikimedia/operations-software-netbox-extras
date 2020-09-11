@@ -108,7 +108,7 @@ class DataTable:
         for row in self._dicts:
             [fieldnames.add(x) for x in row.keys()]
 
-        csvdefaultkwargs = {"fieldnames": list(fieldnames)}
+        csvdefaultkwargs = {"fieldnames": list(sorted(fieldnames))}
         csvdefaultkwargs.update(kwcsvargs)
 
         output = io.StringIO()
@@ -229,8 +229,16 @@ def handle_generic(api, tablename):
             del dat["custom_fields"]
         alldata.append(dat)
     logger.debug("got {} records for table {}".format(len(alldata), tablename))
+
     if alldata:
-        return DataTable(alldata)
+        if "name" in alldata[0]:
+            sortfield = "name"
+        elif "id" in alldata[0]:
+            sortfield = "id"
+        else:
+            sortfield = sorted(alldata[0].keys())[0]
+        logger.debug("using {} as sort field".format(sortfield))
+        return DataTable(sorted(alldata, key=lambda x: x[sortfield]))
     return None
 
 
@@ -287,7 +295,7 @@ def handle_custom_fields(api, tablename):
                 customfields["parent_id"] = row.id
                 alldata.append(customfields)
     if alldata:
-        return DataTable(alldata)
+        return DataTable(sorted(alldata, key=lambda x: x['parent_id']))
 
     return None
 
@@ -352,7 +360,7 @@ def handle_devices_full(api, *args, **kwargs):
         alldata.append(row)
 
     if alldata:
-        return DataTable(alldata)
+        return DataTable(sorted(alldata, key=lambda x: x['name']))
 
     return None
 
