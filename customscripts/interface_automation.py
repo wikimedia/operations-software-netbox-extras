@@ -573,7 +573,6 @@ class ImportPuppetDB(Script, Importer):
 
 
 # Switch to True once all primary IPs are imported into Netbox
-PRIMARY_IPS_ENABLED = False
 MIGRATED_PRIMARY_SITES = ()
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"
@@ -601,42 +600,41 @@ class AssignIPs(Script):
         description="Device name(s), space separated if more than one",
     )
 
-    if PRIMARY_IPS_ENABLED:  # Temporary to hide unnecessary parameters at the moment
-        skip_ipv6_dns = BooleanVar(
-            label="Skip IPv6 DNS records",
-            description=("Skip the generation of the IPv6 DNS records. Enable if the devices don't yet fully support "
-                         "IPv6."),
-        )
-        cassandra_instances = ChoiceVar(
-            required=False,
-            choices=[(i, i) for i in range(6)],
-            label="How many Cassandra instances",
-            description=("To be set only for hosts that will run Cassandra. This many additional IPv4s will be "
-                         "allocated and their DNS name will be set to $HOSTNAME-a, $HOSTNAME-b, etc."),
-        )
-        vlan_type = ChoiceVar(
-            required=False,
-            choices=[(value, value if value else "-" * 9) for value in VLAN_TYPES],
-            label="VLAN Type",
-            description=("The VLAN type to use for assigning the primary IPs. The specific VLAN will be automatically "
-                         "chosen based on the device. For not yet supported cases use the VLAN parameter below. The "
-                         "VLAN Type and VLAN parameters are mutually exclusive."),
-        )
-        vlan = ObjectVar(
-            required=False,
-            label="VLAN",
-            description=("Select the specific VLAN if the VLAN Type parameter doesn't support the device's VLAN. The "
-                         "VLAN Type and VLAN parameters are mutually exclusive."),
-            queryset=VLAN.objects.filter(*VLAN_QUERY_FILTERS, status="active", group__name="production"),
-            widget=APISelect(
-                api_url="/api/ipam/vlans/",
-                display_field="name",
-                additional_query_params={
-                    "group": "production",
-                    "name__nisw": [f"{i}1-" for i in VLAN_TYPES if i],
-                }
-            ),
-        )
+    skip_ipv6_dns = BooleanVar(
+        label="Skip IPv6 DNS records",
+        description=("Skip the generation of the IPv6 DNS records. Enable if the devices don't yet fully support "
+                     "IPv6."),
+    )
+    cassandra_instances = ChoiceVar(
+        required=False,
+        choices=[(i, i) for i in range(6)],
+        label="How many Cassandra instances",
+        description=("To be set only for hosts that will run Cassandra. This many additional IPv4s will be "
+                     "allocated and their DNS name will be set to $HOSTNAME-a, $HOSTNAME-b, etc."),
+    )
+    vlan_type = ChoiceVar(
+        required=False,
+        choices=[(value, value if value else "-" * 9) for value in VLAN_TYPES],
+        label="VLAN Type",
+        description=("The VLAN type to use for assigning the primary IPs. The specific VLAN will be automatically "
+                     "chosen based on the device. For not yet supported cases use the VLAN parameter below. The "
+                     "VLAN Type and VLAN parameters are mutually exclusive."),
+    )
+    vlan = ObjectVar(
+        required=False,
+        label="VLAN",
+        description=("Select the specific VLAN if the VLAN Type parameter doesn't support the device's VLAN. The "
+                     "VLAN Type and VLAN parameters are mutually exclusive."),
+        queryset=VLAN.objects.filter(*VLAN_QUERY_FILTERS, status="active", group__name="production"),
+        widget=APISelect(
+            api_url="/api/ipam/vlans/",
+            display_field="name",
+            additional_query_params={
+                "group": "production",
+                "name__nisw": [f"{i}1-" for i in VLAN_TYPES if i],
+            }
+        ),
+    )
 
     def run(self, data):
         """Run the script and return all the log messages."""
@@ -646,10 +644,10 @@ class AssignIPs(Script):
 
     def _run_script(self, data):
         """Run the script."""
-        if PRIMARY_IPS_ENABLED and not data["vlan_type"] and not data["vlan"]:
+        if not data["vlan_type"] and not data["vlan"]:
             self.log_failure("One parameter between VLAN Type and VLAN must be specified, aborting.")
             return
-        if PRIMARY_IPS_ENABLED and data["vlan_type"] and data["vlan"]:
+        if data["vlan_type"] and data["vlan"]:
             self.log_failure("Only one parameter between VLAN Type and VLAN can be specified, aborting.")
             return
 
@@ -687,19 +685,18 @@ class AssignIPs(Script):
             return
 
         # Assigning first the primary IPs as it can fail some validation step
-        if PRIMARY_IPS_ENABLED:
-            if data["vlan_type"]:
-                vlan = self._get_vlan(data["vlan_type"], device)
-                if vlan is None:
-                    return
-            else:
-                vlan = data["vlan"]
-
-            if not self._is_vlan_valid(vlan, device):
+        if data["vlan_type"]:
+            vlan = self._get_vlan(data["vlan_type"], device)
+            if vlan is None:
                 return
+        else:
+            vlan = data["vlan"]
 
-            self._assign_primary(device, vlan, skip_ipv6_dns=data["skip_ipv6_dns"],
-                                 cassandra_instances=int(data["cassandra_instances"]))
+        if not self._is_vlan_valid(vlan, device):
+            return
+
+        self._assign_primary(device, vlan, skip_ipv6_dns=data["skip_ipv6_dns"],
+                             cassandra_instances=int(data["cassandra_instances"]))
 
         self._assign_mgmt(device)
 
