@@ -62,7 +62,17 @@ class Cables(Report):
             if regex.match(cable.name):
                 successes += 1
             else:
-                self.log_failure(cable.device, "incorrectly named {} cable termination: {}".format(label, cable.name))
+                dev = cable.device
+                if dev is None:
+                    dev = cable.virtual_machine
+                if dev is None:
+                    self.log_failure(None,
+                                     ("incorrectly named {} cable termination not assigned to any device"
+                                      "(interface id: {}): {}")
+                                     .format(label, cable.id, cable.name))
+                else:
+                    self.log_failure(cable.device,
+                                     "incorrectly named {} cable termination: {}".format(label, cable.name))
 
         self.log_success(None, "{} correctly named {} cable terminations".format(successes, label))
 
@@ -99,7 +109,9 @@ class Cables(Report):
     def test_interface_termination_names(self):
         """Proxy to _port_names_test with values for checking interfaces."""
         self._port_names_test(
-            Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES).exclude(device__device_role__slug='server'),
+            Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES)
+            .exclude(device__device_role__slug='server')
+            .filter(virtual_machine__isnull=True),
             re.compile((r"|".join(INTERFACES_REGEXP))),
             "interface",
         )
