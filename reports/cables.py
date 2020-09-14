@@ -99,7 +99,7 @@ class Cables(Report):
     def test_interface_termination_names(self):
         """Proxy to _port_names_test with values for checking interfaces."""
         self._port_names_test(
-            Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES),
+            Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES).exclude(device__device_role__slug='server'),
             re.compile((r"|".join(INTERFACES_REGEXP))),
             "interface",
         )
