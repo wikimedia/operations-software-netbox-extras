@@ -270,13 +270,16 @@ class Importer:
         if (iface == networking["primary"] and is_primary):
             # Try assigning DNS name and getting information about DNS.
             output = self._assign_name(ipaddr, networking, is_ipv6)
-
             ipaddr.is_primary = True
-            self.log_info(f"Setting {nbiface} as primary for {newdev}")
-            if is_ipv6:
+            if is_ipv6 and (newdev.primary_ip6 != ipaddr):
                 newdev.primary_ip6 = ipaddr
-            else:
+                self.log_info(f"Setting {ipaddr} as primary for {newdev}")
+            elif (newdev.primary_ip4 != ipaddr):
                 newdev.primary_ip4 = ipaddr
+                self.log_info(f"Setting {ipaddr} as primary for {newdev}")
+            else:
+                self.log_info(f"{ipaddr} is already primary for {newdev}")
+
         else:
             # FIXME this is transitional and should be removed after dns is generated
             self._maybe_assign_rdns(ipaddr)
