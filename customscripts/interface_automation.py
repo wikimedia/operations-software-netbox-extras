@@ -27,7 +27,7 @@ CONFIGFILE = "/etc/netbox/reports.cfg"
 # Interfaces which we skip when importing
 INTERFACE_IMPORT_BLACKLIST_RE = (re.compile(r"^cali.*"),  # Kubernetes
                                  re.compile(r"^tap.*"),  # Ganeti & Openstack
-                                 re.compile(r"^lo$"),)  # Loopback
+                                 re.compile(r"^lo.*$"),)  # Loopback
 
 # PTRs that we skip when adding names to IPs
 IP_PTR_BLACKLIST_RE = tuple()
