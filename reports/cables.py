@@ -37,6 +37,7 @@ INTERFACES_REGEXP = (
     r"^\d+$",  # Netgear switch interfaces are just numbers.
     r"^lo([.:].+)",  # virtual interfaces
     r"^(public|private)$",  # ganeti interfaces
+    r"^##PRIMARY##$",  # interface name placeholder
 )
 
 BLANK_CABLES_SITE_BLACKLIST = ('eqiad',)
