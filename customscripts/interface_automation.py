@@ -674,7 +674,9 @@ class ImportNetworkFacts(Script, Importer):
                                     "outputs. It may contain a `net_driver` key which specifies the speed of each"
                                     "interface, but the devices will take the default value if this is not specified."),
                        label="Facts JSON")
-    statusoverride = BooleanVar(description="Override device status")
+    statusoverride = BooleanVar(description=("Normally only hosts of specific status are considered for import, if "
+                                             "this setting is set, the script will ignore the host's status."),
+                                label="Status Override")
 
     def __init__(self, *args, **vargs):
         super().__init__(*args, **vargs)
