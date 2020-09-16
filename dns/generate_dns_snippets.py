@@ -19,7 +19,7 @@ from collections import defaultdict
 from configparser import ConfigParser
 from operator import attrgetter
 from pathlib import Path
-from typing import Any, DefaultDict, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, DefaultDict, Dict, KeysView, List, Mapping, Optional, Sequence, Tuple, Union
 
 import git
 import pynetbox
@@ -156,7 +156,7 @@ class Netbox:
         self.addresses = {}  # type: dict
         self.physical_interfaces = {}  # type: dict
         self.virtual_interfaces = {}  # type: dict
-        self.prefixes = set()  # type: Set
+        self.prefixes = {}  # type: dict
 
     def collect(self) -> None:
         """Collect all the data from Netbox. Must be called before using the class."""
@@ -164,7 +164,7 @@ class Netbox:
         self.addresses = {addr.id: addr for addr in self.api.ipam.ip_addresses.filter(status='active')}
         self.physical_interfaces = {interface.id: interface for interface in self.api.dcim.interfaces.all()}
         self.virtual_interfaces = {interface.id: interface for interface in self.api.virtualization.interfaces.all()}
-        self.prefixes = {ipaddress.ip_network(prefix.prefix) for prefix in self.api.ipam.prefixes.all()}
+        self.prefixes = {ipaddress.ip_network(prefix.prefix): prefix for prefix in self.api.ipam.prefixes.all()}
 
         for device in self.api.dcim.devices.filter(status=list(Netbox.NETBOX_DEVICE_STATUSES)):
             self._collect_device(device, True)
@@ -337,11 +337,11 @@ class ForwardRecord(RecordBase):
         """
         return ('.'.join(self.hostname.split('.')[::-1]), self.ip.exploded)
 
-    def get_reverse(self, prefixes: Set) -> ReverseRecord:
+    def get_reverse(self, prefixes: KeysView) -> ReverseRecord:
         """Return the reverse record of the current object.
 
         Arguments:
-            prefixes (set): the set of available prefixes from Netbox.
+            prefixes (KeysView): the iterable of available prefixes from Netbox as ipaddress.ip_interface instances.
 
         Returns:
             ReverseRecord: the reverse record object.
@@ -387,13 +387,13 @@ class Records:
         records_count = 0
         for name, device_data in self.netbox.devices.items():
             for address in device_data['addresses']:
-                hostname, zone = Records._split_dns_name(address.dns_name)
+                hostname, zone, zone_name = self._split_dns_name(address)
                 records = Records._generate_address_records(
                     zone, hostname, address, device_data['device'], device_data['physical'])
                 records_count += len(records)
                 for record in records:
-                    self.zones['direct'][zone].add(record)
-                    reverse = record.get_reverse(self.netbox.prefixes)
+                    self.zones['direct'][zone_name].add(record)
+                    reverse = record.get_reverse(self.netbox.prefixes.keys())
                     self.zones['reverse'][reverse.zone].add(reverse)
 
         logger.info('Generated %d direct and reverse records (%d each) in %d direct zones and %d reverse zones',
@@ -452,25 +452,44 @@ class Records:
 
         return records
 
-    @staticmethod
-    def _split_dns_name(dns_name: str) -> Tuple[str, str]:
+    def _split_dns_name(self, address: pynetbox.models.ipam.IpAddresses) -> Tuple[str, str, str]:
         """Given a FQDN split it into hostname and zone.
 
         Arguments:
-            dns_name (str): the FQDN to split.
+            address (pynetbox.models.ipam.IpAddresses): the address for which to split the FQDN.
 
         Returns:
             tuple: a 2-elements tuple with the hostname and the zone name.
 
         """
-        parts = dns_name.strip().split('.')
+        parts = address.dns_name.strip().split('.')
         max_len = 2 + sum(1 for i in ('frack', 'mgmt', 'svc') if i in parts)
 
         split_len = min(len(parts) - 1, max_len)
         hostname = '.'.join(parts[:-split_len])
         zone = '.'.join(parts[-split_len:])
+        zone_name = zone
+        if not zone.endswith('.wmnet'):  # Split by datacenter based on the prefix for public zones or the device
+            matching_prefixes = [prefix for prefix in self.netbox.prefixes
+                                 if ipaddress.ip_interface(address.address).ip in prefix]
+            if matching_prefixes:
+                prefix_key = min(matching_prefixes, key=attrgetter('prefixlen'))
+                if self.netbox.prefixes[prefix_key].site:
+                    suffix = self.netbox.prefixes[prefix_key].site.slug
+                else:
+                    logger.debug('Failed to find DC for address %s, prefix %s, using global', address, prefix_key)
+                    suffix = 'global'
 
-        return hostname, zone
+            else:  # try to gather it from the device it's attached to
+                if address.interface:
+                    suffix = address.interface.device.site.slug
+                else:
+                    logger.warning('Failed to find DC for address %s from prefix or device, using global', address)
+                    suffix = 'global'
+
+            zone_name += '-' + suffix
+
+        return hostname, zone, zone_name
 
 
 def setup_repo(config: ConfigParser, tmpdir: str) -> git.Repo:
