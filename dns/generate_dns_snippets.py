@@ -178,7 +178,7 @@ class Netbox:
                 physical = False
 
                 if not address.dns_name:
-                    logger.warning('%s:%s has no DNS name', name, address)
+                    logger.debug('%s:%s has no DNS name', name, address)
                     continue
             else:
                 try:
@@ -195,7 +195,7 @@ class Netbox:
                     continue
 
                 if not address.dns_name:
-                    logger.warning('%s:%s has no DNS name', name, address.interface.name)
+                    logger.debug('%s:%s has no DNS name', name, address.interface.name)
                     continue
 
             self.devices[name]['addresses'].add(address)
@@ -212,7 +212,7 @@ class Netbox:
                 if self.addresses[primary.id].dns_name:
                     self.devices[device.name]['addresses'].add(self.addresses[primary.id])
                 else:
-                    logger.error('Primary address %s for device %s is missing a DNS name', primary, device.name)
+                    logger.debug('Primary address %s for device %s is missing a DNS name', primary, device.name)
 
 
 class RecordBase:
