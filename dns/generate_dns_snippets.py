@@ -337,7 +337,7 @@ class ForwardRecord(RecordBase):
         """
         return ('.'.join(self.hostname.split('.')[::-1]), self.ip.exploded)
 
-    def get_reverse(self, prefixes: KeysView) -> ReverseRecord:
+    def get_reverse(self, prefixes: KeysView) -> Optional[ReverseRecord]:
         """Return the reverse record of the current object.
 
         Arguments:
@@ -347,6 +347,10 @@ class ForwardRecord(RecordBase):
             ReverseRecord: the reverse record object.
 
         """
+        matching_prefixes = [prefix for prefix in prefixes if self.ip in prefix]
+        if not matching_prefixes:  # External address not managed by us, skip the PTR entirely
+            return None
+
         if self.ip.version == 6:  # For IPv6 PTRs we always split the zone at /64 and write the last 16 nibbles
             parts = self.ip.reverse_pointer.split('.')
             pointer = '.'.join(parts[:16])
@@ -357,7 +361,7 @@ class ForwardRecord(RecordBase):
             # as separator for the netmask instead of the slash '/'.
             pointer, zone = self.ip.reverse_pointer.split('.', 1)
             if self.interface.network.prefixlen > 24:
-                max_prefix = max([prefix for prefix in prefixes if self.ip in prefix], key=attrgetter('prefixlen'))
+                max_prefix = max(matching_prefixes, key=attrgetter('prefixlen'))
                 if max_prefix.prefixlen > 24:
                     zone = max_prefix.reverse_pointer.replace('/', '-')
                 else:
@@ -394,7 +398,8 @@ class Records:
                 for record in records:
                     self.zones['direct'][zone_name].add(record)
                     reverse = record.get_reverse(self.netbox.prefixes.keys())
-                    self.zones['reverse'][reverse.zone].add(reverse)
+                    if reverse is not None:
+                        self.zones['reverse'][reverse.zone].add(reverse)
 
         logger.info('Generated %d direct and reverse records (%d each) in %d direct zones and %d reverse zones',
                     records_count * 2, records_count, len(self.zones['direct']), len(self.zones['reverse']))
