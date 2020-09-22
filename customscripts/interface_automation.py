@@ -575,8 +575,7 @@ class ImportPuppetDB(Script, Importer):
         return "\n".join(messages)
 
 
-# Switch to True once all primary IPs are imported into Netbox
-MIGRATED_PRIMARY_SITES = ()
+MIGRATED_PRIMARY_SITES = ("ulsfo",)
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"
 VLAN_TYPES = (
