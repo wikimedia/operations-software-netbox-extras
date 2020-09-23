@@ -13,6 +13,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 from abc import abstractmethod
 from collections import defaultdict
@@ -45,6 +46,8 @@ ERROR_PERCENTAGE_LINES_CHANGED = 5
 WARNING_PERCENTAGE_FILES_CHANGED = 8
 ERROR_PERCENTAGE_FILES_CHANGED = 15
 ALLOWED_CHANGES_MINUTES = 30
+ICINGA_RUN_EVERY_MINUTES = 60
+ICINGA_RETRY_ON_FAILURE_MINUTES = 15
 
 # Typing alias for a Netbox device, either physical or virtual.
 NetboxDeviceType = Union[pynetbox.models.dcim.Devices, pynetbox.models.virtualization.VirtualMachines]
@@ -639,24 +642,50 @@ def run_commit(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> T
     return batch_status, ret_code
 
 
-def to_icinga_ret_code(ret_code: int, netbox: Netbox) -> int:
-    """Return the exit code suitable for an Icinga check based on the status, time of last change and run result."""
+def save_icinga_state(ret_code: int, netbox: Netbox, state_file: str) -> None:
+    """Save a JSON status file so that can be consumed by an NRPE check."""
     if ret_code == NO_CHANGES_RETURN_CODE:
-        print('Netbox has zero uncommitted DNS changes')
+        message = 'Netbox has zero uncommitted DNS changes'
         ret_code = 0
     elif ret_code != 0:
-        print('An error occurred checking if Netbox has uncommitted DNS changes')
+        message = 'An error occurred checking if Netbox has uncommitted DNS changes'
         ret_code = 2
     else:
         if netbox.changelog_since(datetime.now() - timedelta(minutes=ALLOWED_CHANGES_MINUTES)):
-            print('Netbox has uncommitted DNS changes, but last edit in Netbox is within {n} minutes'.format(
-                n=ALLOWED_CHANGES_MINUTES))
+            message = 'Netbox has uncommitted DNS changes, but last edit in Netbox is within {n} minutes'.format(
+                n=ALLOWED_CHANGES_MINUTES)
             ret_code = 1
         else:
-            print('Netbox has uncommitted DNS changes')
+            message = 'Netbox has uncommitted DNS changes'
             ret_code = 2
 
-    return ret_code
+    with open(state_file, 'w') as f:
+        json.dump({'exit_code': ret_code, 'message': message, 'timestamp': time.time()}, f)
+
+
+def check_icinga_should_run(state_file: str) -> bool:
+    """Return True if the script should continue to update the state file, False if the state file is fresh enough."""
+    try:
+        with open(state_file) as f:
+            state = json.load(f)
+    except Exception as e:
+        logger.error('Failed to read Icinga state from %s: %s', state_file, e)
+        return True
+
+    delta = time.time() - state['timestamp']
+    logger.info('Last run was %d seconds ago with exit code %d', delta, state['exit_code'])
+    if state['exit_code'] == 0:
+        if delta > ICINGA_RUN_EVERY_MINUTES * 60:
+            return True
+
+        logger.info('Skipping')
+        return False
+
+    if delta > ICINGA_RETRY_ON_FAILURE_MINUTES * 60:
+        return True
+
+    logger.info('Skipping')
+    return False
 
 
 def main() -> int:
@@ -665,6 +694,10 @@ def main() -> int:
     setup_logging(args.verbose)
     config = ConfigParser()
     config.read(args.config)
+    icinga_state_file = config.get('icinga', 'state_file')
+
+    if args.command == 'commit' and args.icinga_check and not check_icinga_should_run(icinga_state_file):
+        return 0
 
     batch_status = None
     ret_code = EXCEPTION_RETURN_CODE
@@ -694,7 +727,8 @@ def main() -> int:
             print('METADATA:', json.dumps(batch_status))
 
     if args.icinga_check:
-        ret_code = to_icinga_ret_code(ret_code, Netbox(config.get('netbox', 'api'), config.get('netbox', 'token_ro')))
+        save_icinga_state(ret_code, Netbox(config.get('netbox', 'api'), config.get('netbox', 'token_ro')),
+                          icinga_state_file)
 
     return ret_code
 
