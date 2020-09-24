@@ -726,7 +726,7 @@ def main() -> int:
         if batch_status is not None and not args.icinga_check:
             print('METADATA:', json.dumps(batch_status))
 
-    if args.icinga_check:
+    if args.command == 'commit' and args.icinga_check:
         save_icinga_state(ret_code, Netbox(config.get('netbox', 'api'), config.get('netbox', 'token_ro')),
                           icinga_state_file)
 
