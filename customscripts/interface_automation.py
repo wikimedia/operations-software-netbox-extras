@@ -246,7 +246,7 @@ class Importer:
             self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
             if is_ipv6 and olddev.primary_ip6 == ipaddr:
                 olddev.primary_ip6 = None
-            elif olddev.primary_ip4 == ipaddr:
+            elif not is_ipv6 and olddev.primary_ip4 == ipaddr:
                 olddev.primary_ip4 = None
             ipaddr.interface.save()
             olddev.save()
@@ -274,7 +274,7 @@ class Importer:
             if is_ipv6 and (newdev.primary_ip6 != ipaddr):
                 newdev.primary_ip6 = ipaddr
                 self.log_info(f"Setting {ipaddr} as primary for {newdev}")
-            elif (newdev.primary_ip4 != ipaddr):
+            elif not is_ipv6 and (newdev.primary_ip4 != ipaddr):
                 newdev.primary_ip4 = ipaddr
                 self.log_info(f"Setting {ipaddr} as primary for {newdev}")
             else:
