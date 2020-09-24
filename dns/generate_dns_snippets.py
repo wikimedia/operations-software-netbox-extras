@@ -729,6 +729,8 @@ def main() -> int:
     if args.command == 'commit' and args.icinga_check:
         save_icinga_state(ret_code, Netbox(config.get('netbox', 'api'), config.get('netbox', 'token_ro')),
                           icinga_state_file)
+        if ret_code == NO_CHANGES_RETURN_CODE:
+            ret_code = 0
 
     return ret_code
 
