@@ -697,8 +697,12 @@ class AssignIPs(Script):
         if not self._is_vlan_valid(vlan, device):
             return
 
-        self._assign_primary(device, vlan, skip_ipv6_dns=data["skip_ipv6_dns"],
-                             cassandra_instances=int(data["cassandra_instances"]))
+        if device.tenant is not None and device.tenant.slug == FRACK_TENANT_SLUG:
+            self.log_warning("Skipping Primary IP allocation for device {device} with tenant {device.tenant}."
+                             "Primary IP allocation for Fundraising Tech is done manually in the DNS repository.")
+        else:
+            self._assign_primary(device, vlan, skip_ipv6_dns=data["skip_ipv6_dns"],
+                                 cassandra_instances=int(data["cassandra_instances"]))
 
         self._assign_mgmt(device)
 
