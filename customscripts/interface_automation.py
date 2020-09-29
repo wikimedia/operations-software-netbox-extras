@@ -575,7 +575,7 @@ class ImportPuppetDB(Script, Importer):
         return "\n".join(messages)
 
 
-MIGRATED_PRIMARY_SITES = ("ulsfo",)
+MIGRATED_PRIMARY_SITES = ("ulsfo", "eqsin")
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"
 VLAN_TYPES = (
