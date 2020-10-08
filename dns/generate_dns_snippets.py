@@ -355,19 +355,20 @@ class ForwardRecord(RecordBase):
         """
         return ('.'.join(self.hostname.split('.')[::-1]), self.ip.exploded)
 
-    def get_reverse(self, prefixes: KeysView) -> Optional[ReverseRecord]:
+    def get_reverses(self, prefixes: KeysView) -> List[ReverseRecord]:
         """Return the reverse record of the current object.
 
         Arguments:
             prefixes (KeysView): the iterable of available prefixes from Netbox as ipaddress.ip_interface instances.
 
         Returns:
-            ReverseRecord: the reverse record object.
+            list: list of ReverseRecord objects.
 
         """
         matching_prefixes = [prefix for prefix in prefixes if self.ip in prefix]
+        reverses: List[ReverseRecord] = []
         if not matching_prefixes:  # External address not managed by us, skip the PTR entirely
-            return None
+            return reverses
 
         if self.ip.version == 6:  # For IPv6 PTRs we always split the zone at /64 and write the last 16 nibbles
             parts = self.ip.reverse_pointer.split('.')
@@ -379,13 +380,26 @@ class ForwardRecord(RecordBase):
             # as separator for the netmask instead of the slash '/'.
             pointer, zone = self.ip.reverse_pointer.split('.', 1)
             if self.interface.network.prefixlen > 24:
-                max_prefix = max(matching_prefixes, key=attrgetter('prefixlen'))
-                if max_prefix.prefixlen > 24:
-                    zone = max_prefix.reverse_pointer.replace('/', '-')
-                else:
-                    zone = max_prefix.network_address.reverse_pointer.split('.', 1)[1]
+                sorted_prefixes_keys = sorted(matching_prefixes, key=attrgetter('prefixlen'), reverse=True)
+                matched_prefix = sorted_prefixes_keys[0]
+                if matched_prefix.prefixlen > 29:  # Consolidate into the parent prefix
+                    # Temporary code to generate records in both files
+                    tmp_zone = matched_prefix.reverse_pointer.replace('/', '-')
+                    reverses.append(ReverseRecord(
+                        tmp_zone, '.'.join((self.hostname, self.zone)), str(self.interface), pointer))
+                    # End of temporary code
+                    matched_prefix = next(prefix for prefix in sorted_prefixes_keys if prefix.prefixlen <= 29)
 
-        return ReverseRecord(zone, '.'.join((self.hostname, self.zone)), str(self.interface), pointer)
+                if matched_prefix.prefixlen > 24:
+                    zone = matched_prefix.reverse_pointer.replace('/', '-')
+                elif matched_prefix.prefixlen == 24:
+                    zone = matched_prefix.network_address.reverse_pointer.split('.', 1)[1]
+                else:  # No need to override, the pre-calculated zone is already correct
+                    logger.debug('Parent container prefixlen for IP %s is smaller than /24 (/%d), forcing /24',
+                                 self.ip, matched_prefix.prefixlen)
+
+        reverses.append(ReverseRecord(zone, '.'.join((self.hostname, self.zone)), str(self.interface), pointer))
+        return reverses
 
 
 class Records:
@@ -415,8 +429,8 @@ class Records:
                 records_count += len(records)
                 for record in records:
                     self.zones['direct'][zone_name].add(record)
-                    reverse = record.get_reverse(self.netbox.prefixes.keys())
-                    if reverse is not None:
+                    reverses = record.get_reverses(self.netbox.prefixes.keys())
+                    for reverse in reverses:
                         self.zones['reverse'][reverse.zone].add(reverse)
 
         logger.info('Generated %d direct and reverse records (%d each) in %d direct zones and %d reverse zones',
