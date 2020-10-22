@@ -1,4 +1,6 @@
 import configparser
+import csv
+import io
 import ipaddress
 import re
 import json
@@ -18,7 +20,7 @@ from django.contrib.contenttypes.models import ContentType
 from dcim.choices import CableStatusChoices, CableTypeChoices, InterfaceTypeChoices
 from dcim.models import Cable, Device, Interface, VirtualChassis
 from extras.constants import LOG_LEVEL_CODES
-from extras.scripts import BooleanVar, ChoiceVar, ObjectVar, Script, StringVar, TextVar
+from extras.scripts import BooleanVar, ChoiceVar, FileVar, ObjectVar, Script, StringVar, TextVar
 from ipam.models import IPAddress, Prefix, VLAN
 from ipam.filters import PrefixFilterSet
 from utilities.choices import ColorChoices
@@ -783,17 +785,100 @@ VLAN_POP_TYPES = ("public", "private")
 VLAN_QUERY_FILTERS = [~Q(name__istartswith=f"{i}1-") for i in VLAN_TYPES if i]
 FRACK_TENANT_SLUG = "fr-tech"
 
+CSV_HEADERS = ('device',
+               'z_nbdevice',
+               'vlan',
+               'vlan_type',
+               'skip_ipv6_dns',
+               'cassandra_instances',
+               'z_iface',
+               'cable_id')
 
-class AssignIPs(Script, Importer):
+
+def format_logs(logs):
+    """Return all log messages properly formatted."""
+    return "\n".join(
+        "[{level}] {msg}".format(level=LOG_LEVEL_CODES.get(level), msg=message) for level, message in logs
+    )
+
+
+class ProvisionServerNetworkCSV(Script):
 
     class Meta:
-        name = "Add interfaces and IPs to devices"
-        description = ("Create a management, primary interface, switch interface and cable for the specified device, "
-                       "assign it the necessary IP addresse(s).")
+        name = "Provision multiple servers network attributes from a CSV"
+        description = ("More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan.")
+
+    csv_file = FileVar(
+        required=True,
+        label="CSV import",
+        description="Template and example on https://phabricator.wikimedia.org/F32411089"
+    )
+
+    def run(self, data, commit):
+        reader = csv.DictReader(io.StringIO(data['csv_file'].read().decode('utf-8')))
+
+        for row in reader:
+            try:
+                data = self._transform_csv(row)
+            except csv.Error as e:
+                self.log_failure(f"Error parsing row {reader.line_num}: {e}")
+                continue
+            if not data:
+                # If any issue with the transform (eg. typoed host), ignore the row
+                continue
+            provision_script = ProvisionServerNetwork()
+            provision_script.provision_server(data)
+            self.log.extend(provision_script.log)
+        return format_logs(self.log)
+
+    def _transform_csv(self, row):
+        "Transform the CSV fields to Netbox objects."
+
+        for header in CSV_HEADERS:
+            try:
+                row[header]
+            except KeyError:
+                self.log_failure(f"CSV header {header} missing, skipping.")
+                return
+        # Ensure that no cells are missing, not empty cells, but missing cells
+        if any(value is None for value in row.values()):
+            self.log_failure(f"{row['device']}: missing CSV cells, skipping.")
+            return
+        try:
+            row['device'] = Device.objects.get(name=row['device'])
+        except ObjectDoesNotExist:
+            self.log_failure(f"{row['device']}: device not found, skipping.")
+            return
+        try:
+            row['z_nbdevice'] = Device.objects.get(name=row['z_nbdevice'])
+        except ObjectDoesNotExist:
+            self.log_failure(f"{row['device']}: switch {row['z_nbdevice']} not found, skipping.")
+            return
+        if row['vlan']:
+            try:
+                row['vlan'] = VLAN.objects.get(name=row['vlan'], site=row['device'].site)
+            except ObjectDoesNotExist:
+                self.log_failure(f"{row['device']}: vlan {row['vlan']} not found, skipping.")
+                return
+        row['skip_ipv6_dns'] = bool(int(row['skip_ipv6_dns']))
+        if row['cassandra_instances']:
+            row['cassandra_instances'] = int(row['cassandra_instances'])
+        else:
+            row['cassandra_instances'] = 0
+
+        return row
+
+
+class ProvisionServerNetwork(Script, Importer):
+
+    class Meta:
+        name = "Provision a server's network attributes"
+        description = ("More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan.")
 
     # TODO convert to NB 2.9 with proper select
     device = ObjectVar(
-        description=("Inventory or planned server."),
+        required=True,
+        description=("Inventory or planned server. (Required)"),
         queryset=Device.objects.filter(device_role__slug='server', status__in=('inventory', 'planned')),
         widget=APISelect(
             api_url="/api/dcim/devices/",
@@ -806,8 +891,9 @@ class AssignIPs(Script, Importer):
 
     # TODO convert to NB 2.9 with proper select, to only show the ToR of the selected device
     z_nbdevice = ObjectVar(
+        required=True,
         label="Switch",
-        description=("Top of rack switch."),
+        description=("Top of rack switch. (Required)"),
         queryset=Device.objects.filter(device_role__slug__in=('asw', 'cloudsw'), status__in=('active', 'staged')),
         widget=APISelect(
             api_url="/api/dcim/devices/",
@@ -819,11 +905,12 @@ class AssignIPs(Script, Importer):
     )
 
     # TODO convert to NB 2.9 with proper select, to only show the interfaces of the selected switch
-    z_iface = StringVar(label="Switch interface")
+    z_iface = StringVar(label="Switch interface", description="Switch interface. (Required)", required=True)
     cable_id = StringVar(label="Cable ID", required=False)
 
     skip_ipv6_dns = BooleanVar(
-        label="Skip IPv6 DNS records",
+        required=False,
+        label="Skip IPv6 DNS records.",
         description=("Skip the generation of the IPv6 DNS records. Enable if the devices don't yet fully support "
                      "IPv6."),
     )
@@ -858,24 +945,13 @@ class AssignIPs(Script, Importer):
         ),
     )
 
-    def run(self, data):
+    def run(self, data, commit):
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
-        self._run_script(data)
-        return self._format_logs()
+        self.provision_server(data)
+        return format_logs(self.log)
 
-    def _run_script(self, data):
-        """Run the script."""
-        if not data["vlan_type"] and not data["vlan"]:
-            self.log_failure("One parameter between VLAN Type and VLAN must be specified, aborting.")
-            return
-        if data["vlan_type"] and data["vlan"]:
-            self.log_failure("Only one parameter between VLAN Type and VLAN can be specified, aborting.")
-            return
-
-        self._process_device(data)
-
-    def _process_device(self, data):
+    def provision_server(self, data):
         """Process a single device."""
         device = data['device']
         z_nbdevice = data['z_nbdevice']
@@ -884,6 +960,14 @@ class AssignIPs(Script, Importer):
 
         # Keeping those checks for the possible future bulk (CSV) import
         self.log_info(f"Processing device {device.name}")
+        if not data["vlan_type"] and not data["vlan"]:
+            self.log_failure("One parameter between VLAN Type and VLAN must be specified, aborting.")
+            return
+
+        if data["vlan_type"] and data["vlan"]:
+            self.log_failure("Only one parameter between VLAN Type and VLAN can be specified, aborting.")
+            return
+
         if device.status not in ("inventory", "planned"):
             self.log_failure(
                 f"Skipping device {device.name} with status {device.status}, expected Inventory or Planned."
@@ -980,12 +1064,6 @@ class AssignIPs(Script, Importer):
         self.log_info(f"Setting {z_nbiface} VLANs for device {z_nbiface.device}")
         z_nbiface.save()
         return z_nbiface
-
-    def _format_logs(self):
-        """Return all log messages properly formatted."""
-        return "\n".join(
-            "[{level}] {msg}".format(level=LOG_LEVEL_CODES.get(level), msg=message) for level, message in self.log
-        )
 
     def _assign_mgmt(self, device):
         """Create a management interface in the device and assign to it a management IP."""
