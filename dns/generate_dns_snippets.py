@@ -26,8 +26,7 @@ from typing import Any, DefaultDict, Dict, KeysView, List, Mapping, Optional, Se
 import git
 import pynetbox
 
-from requests import PreparedRequest, Response, Session
-from requests.adapters import HTTPAdapter
+from wmflib.requests import http_session
 
 
 logger = logging.getLogger()
@@ -118,32 +117,6 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-class TimeoutHTTPAdapter(HTTPAdapter):
-
-    def __init__(self, **kwargs: Any):
-        """Initialize the adapter with a custom timeout.
-
-        Params:
-            As required by requests's HTTPAdapter:
-            https://2.python-requests.org/en/master/api/#requests.adapters.HTTPAdapter
-
-        """
-        self.timeout = 900
-        super().__init__(**kwargs)
-
-    def send(self, request: PreparedRequest, **kwargs: Any) -> Response:  # type: ignore
-        """Override the send method to pass the adapter.
-
-        Params:
-            As required by requests's HTTPAdapter:
-            https://2.python-requests.org/en/master/api/#requests.adapters.HTTPAdapter.send
-            The type ignore is needed unless the exact signature is replicated.
-
-        """
-        kwargs['timeout'] = self.timeout
-        return super().send(request, **kwargs)
-
-
 class Netbox:
     """Class to manage all data from Netbox."""
 
@@ -158,13 +131,8 @@ class Netbox:
             token (str): the Netbox API token.
 
         """
-        adapter = TimeoutHTTPAdapter()
-        session = Session()
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-
         self.api = pynetbox.api(url=url, token=token)
-        self.api.http_session = session
+        self.api.http_session = http_session('netbox-extras.dns.generate_dns_snippets', timeout=900)
         self.devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
         self.devices[NO_DEVICE_NAME]['device'] = None
         self.addresses = {}  # type: dict
