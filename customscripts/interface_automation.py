@@ -15,12 +15,13 @@ from django.db.models import Q
 
 from django.contrib.contenttypes.models import ContentType
 
-from dcim.choices import CableStatusChoices, InterfaceTypeChoices
+from dcim.choices import CableStatusChoices, CableTypeChoices, InterfaceTypeChoices
 from dcim.models import Cable, Device, Interface, VirtualChassis
 from extras.constants import LOG_LEVEL_CODES
 from extras.scripts import BooleanVar, ChoiceVar, ObjectVar, Script, StringVar, TextVar
 from ipam.models import IPAddress, Prefix, VLAN
 from ipam.filters import PrefixFilterSet
+from utilities.choices import ColorChoices
 from utilities.forms import APISelect
 from virtualization.models import VirtualMachine
 
@@ -404,8 +405,6 @@ class Importer:
         try:
             z_nbiface = z_nbdevice.interfaces.get(name=z_iface)
         except ObjectDoesNotExist:  # If interface doesn't exist: create it
-            self.log_info(f"Creating interface {z_iface} for device {z_nbdevice}")
-
             mtu = None
             if 'mtu' in lldp_iface and lldp_iface['mtu'] != 1514:  # Get MTU but ignore the default one
                 mtu = lldp_iface['mtu']
@@ -420,6 +419,7 @@ class Importer:
                                   type=iface_fmt,
                                   mtu=mtu)
             z_nbiface.save()
+            self.log_success(f"{z_nbdevice}: created interface {z_iface}")
         return z_nbiface
 
     def _update_z_vlan(self, lldp_iface, z_nbiface):
@@ -449,7 +449,7 @@ class Importer:
             z_nbiface.tagged_vlans.set(nb_tagged_vlans)
             changed = True
         if changed:
-            self.log_info(f"Updating interface {z_nbiface} VLANs for device {z_nbiface.device}")
+            self.log_success(f"{z_nbiface.device}: updating vlans for interface {z_nbiface}")
             z_nbiface.save()
 
     def _update_cable(self, lldp_iface, nbiface, z_nbiface):
@@ -469,30 +469,47 @@ class Importer:
         # As well as if only one side exist (as it can't go to the good place)
         if nbcable != z_nbcable:
             if nbcable is not None:
-                self.log_info(f"Remove cable from {nbiface.device}:{nbiface}")
+                self.log_success(f"{nbiface.device}: Remove cable from {nbiface}")
                 nbcable.delete()
                 nbcable = None
             if z_nbcable is not None:
-                self.log_info(f"Remove cable from {z_nbiface.device}:{z_nbiface}")
+                self.log_success(f"{z_nbiface.device}: remove cable from {z_nbiface}")
                 z_nbcable.delete()
                 z_nbcable = None
         elif nbcable is not None:
             # If they match and are not None, we still need to check if the cable ID is good
             if label and nbcable.label != label:
                 nbcable.label = label
-                self.log_info(f"Update label for {nbcable} : {label}")
+                self.log_success(f"{nbiface.device}: update label for {nbcable}: {label}")
                 nbcable.save()
         # Now we either have a fully correct cable, or nbcable == z_nbcable == None
         # In the 2nd case, we create the cable
         if nbcable is None:
+            color = ''
+            type = ''
+            color_human = ''
+            # Most of our infra are either blue 1G copper, or black 10G DAC.
+            # Exceptions are yellow fibers for longer distances like LVS, or special sites like ulsfo
+            if nbiface.type == InterfaceTypeChoices.TYPE_1GE_FIXED:
+                color = ColorChoices.COLOR_BLUE
+                color_human = ColorChoices.as_dict()[color]
+                type = CableTypeChoices.TYPE_CAT5E
+            elif nbiface.type == InterfaceTypeChoices.TYPE_10GE_SFP_PLUS:
+                color = ColorChoices.COLOR_BLACK
+                color_human = ColorChoices.as_dict()[color]
+                type = CableTypeChoices.TYPE_DAC_PASSIVE
+
             cable = Cable(termination_a=nbiface,
                           termination_a_type=interface_ct,
                           termination_b=z_nbiface,
                           termination_b_type=interface_ct,
                           label=label,
+                          color=color,
+                          type=type,
                           status=CableStatusChoices.STATUS_CONNECTED)
             cable.save()
-            self.log_info(f"Created cable {cable}")
+            self.log_success(f"{nbiface.device}: created cable {cable}")
+            self.log_warning(f"{nbiface.device}: assuming {color_human} {type} because interface: {nbiface.type}.")
 
     def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_virtual=False):
         """Resolve one device's interfaces and ip addresses based on a net_driver, networking and lldp dictionary
