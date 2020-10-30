@@ -498,9 +498,11 @@ class Importer:
         # clean up potential ##PRIMARY## interface
         for dif in device.interfaces.all():
             if dif.name == '##PRIMARY##' and 'primary' in networking:
-                self.log_info(f"{device.name} Renaming ##PRIMARY## interface to {networking['primary']}")
                 dif.name = networking['primary']
+                if net_driver[networking['primary']]["speed"] == 10000:
+                    dif.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
                 dif.save()
+                self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {dif.name} ({dif.type})")
                 break
 
         for iface, iface_dict in networking["interfaces"].items():
