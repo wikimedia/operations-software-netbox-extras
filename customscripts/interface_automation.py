@@ -195,19 +195,23 @@ class Importer:
 
         return output
 
-    def _maybe_assign_rdns(self, ipaddr):
+    def _assign_rdns(self, ipaddr):
         ptr = self._resolve_ptr(str(ipaddress.ip_interface(ipaddr.address).ip))
 
         if ptr:
             if (len(ptr) > 1):
-                self.log_error(f"SKIPPING assignment for {ipaddr} has more than 1 reverse value.")
+                self.log_warning(f"{ipaddr}: skipping PTR assignment, DNS has more than 1 reverse record")
                 return
             potname = ptr[0]
             if any(r.match(potname) for r in IP_PTR_BLACKLIST_RE):
-                self.log_warning(f"SKIPPING assignment for {ipaddr} has blacklisted name {potname}.")
+                self.log_warning(f"{ipaddr}: skipping PTR assignment, blacklisted name {potname}")
                 return
-            self.log_info(f"assigning ptr name {potname} to {ipaddr}")
-            ipaddr.dns_name = potname
+            if ipaddr.dns_name != potname:
+                self.log_success(f"{ipaddr}: assigning PTR {potname}")
+                ipaddr.dns_name = potname
+                ipaddr.save()
+            else:
+                self.log_debug(f"{ipaddr}: already have PTR {potname}")
 
     def _assign_ip_to_interface(self, address, nbiface, networking, iface, is_primary, is_ipv6):
         """Perform the minor complexity of assigning an IP address to an interface as specified by
@@ -290,7 +294,7 @@ class Importer:
 
         else:
             # FIXME this is transitional and should be removed after dns is generated
-            self._maybe_assign_rdns(ipaddr)
+            self._assign_rdns(ipaddr)
 
         newdev.save()
 
@@ -330,8 +334,6 @@ class Importer:
             self.log_info("VIP exempt: Overriding provided netmask")
 
         if (is_anycast or (address.network.prefixlen in (32, 128))):
-            # We specially handle VIP addresses but do not allow them to be bound
-            self.log_info(f"{address} is a VIP and will be created but left unassigned.")
             self._handle_vip(address, is_anycast)
             return None
 
@@ -344,19 +346,24 @@ class Importer:
         try:
             ipaddrs = IPAddress.objects.filter(address=str(address))
             if (ipaddrs.count() > 1):
-                self.log_info(f"{address} has multiple results ! taking the 0th one")
+                self.log_debug(f"{address} has multiple results, taking the 0th one")
             elif (ipaddrs.count() == 0):
                 raise ObjectDoesNotExist()
             ipaddr = ipaddrs[0]
-            ipaddr.role = role
-            ipaddr.interface = None
+            if ipaddr.role != role or ipaddr.interface is not None or ipaddr.status != "active":
+                ipaddr.role = role
+                # We specially handle VIP addresses but do not allow them to be bound
+                ipaddr.interface = None
+                ipaddr.status = "active"
+                ipaddr.save()
+                self.log_success(f"{address}: {role}, no interface and active")
         except ObjectDoesNotExist:
-            self.log_info(f"Creating {address}")
+            self.log_success(f"{address}: created, {role}, no interface and active")
             ipaddr = IPAddress(address=str(address),
-                               interface=None, role=role)
-        ipaddr.status = "active"
-        self._maybe_assign_rdns(ipaddr)
-        ipaddr.save()
+                               interface=None, role=role,
+                               status='active')
+            ipaddr.save()
+        self._assign_rdns(ipaddr)
 
     def _get_vc_member(self, neighbor, interface):
         """Return a Netbox VC member device based on a hostname and an interface."""
@@ -434,7 +441,7 @@ class Importer:
         if z_nbiface.untagged_vlan != nb_untagged_vlan:
             z_nbiface.untagged_vlan = nb_untagged_vlan
             changed = True
-        if z_nbiface.tagged_vlans != nb_tagged_vlans:
+        if list(z_nbiface.tagged_vlans.all()) != nb_tagged_vlans:
             z_nbiface.tagged_vlans.set(nb_tagged_vlans)
             changed = True
         if changed:
