@@ -320,6 +320,10 @@ class Importer:
             # We skip link local and loopback addresses
             return None
 
+        # Warn the user if one of the IP is an auto-config IP
+        if is_ipv6 and address.exploded[27:32] == 'ff:fe':
+            self.log_warning(f"{address} is a SLAAC IP")
+
         if (vip_exempt):
             # FIXME
             # this is a bug in our deployment of certain servers where some service addresses have
