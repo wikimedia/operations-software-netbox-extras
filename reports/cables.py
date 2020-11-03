@@ -9,6 +9,8 @@ import re
 
 from collections import defaultdict
 
+from django.contrib.contenttypes.models import ContentType
+
 from dcim.choices import CableStatusChoices, DeviceStatusChoices
 
 from dcim.models import Cable, ConsolePort, ConsoleServerPort, Interface, PowerPort, PowerOutlet
@@ -41,6 +43,9 @@ INTERFACES_REGEXP = (
 )
 
 BLANK_CABLES_SITE_BLACKLIST = ('eqiad',)
+CORE_SITES = ('eqiad', 'codfw')
+
+interface_ct = ContentType.objects.get_for_model(Interface)
 
 
 class Cables(Report):
@@ -129,6 +134,25 @@ class Cables(Report):
             site = cable.termination_a.device.site.slug
         return site
 
+    def _core_site_server_cable(self, cable):
+        """check if the cable is a core site server cable.
+
+         Arguments:
+            cable: Netbox cable
+        Returns:
+            true: the cable is a core site server cable.
+            false: it's not.
+        """
+        if (cable.termination_a_type == interface_ct
+                and cable.termination_a.device.device_role.slug == 'server'
+                and cable.termination_a.device.site.slug in CORE_SITES):
+            return True
+        if (cable.termination_b_type == interface_ct
+                and cable.termination_b.device.device_role.slug == 'server'
+                and cable.termination_b.device.site.slug in CORE_SITES):
+            return True
+        return False
+
     def test_duplicate_cable_label(self):
         """Cables within sites should have unique labels."""
         labelcounts = defaultdict(list)
@@ -153,11 +177,16 @@ class Cables(Report):
         self.log_success(None, "{} non-duplicate cable labels".format(success))
 
     def test_blank_cable_label(self):
-        """Cables should not have blank labels."""
+        """Cables should not have blank labels.
+
+        Except for core sites servers (see T266533).
+        """
         success = 0
         for cable in Cable.objects.filter(status=CableStatusChoices.STATUS_CONNECTED):
             if cable.label is None or not cable.label.strip():
                 site = self._get_site_slug_for_cable(cable)
+                if self._core_site_server_cable(cable):
+                    continue
                 if site in BLANK_CABLES_SITE_BLACKLIST:
                     self.log_warning(cable, "blank cable label (site {})".format(site))
                     continue
