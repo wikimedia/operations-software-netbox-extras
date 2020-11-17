@@ -883,8 +883,8 @@ class ProvisionServerNetwork(Script, Importer):
         widget=APISelect(
             api_url="/api/dcim/devices/",
             additional_query_params={
-                'device_role__slug': 'server',
-                'status__in': ('inventory', 'planned'),
+                'role': 'server',
+                'status': ('inventory', 'planned'),
             }
         ),
     )
@@ -898,8 +898,8 @@ class ProvisionServerNetwork(Script, Importer):
         widget=APISelect(
             api_url="/api/dcim/devices/",
             additional_query_params={
-                'device_role__slug__in': ('asw', 'cloudsw'),
-                'status__in': ('active', 'staged'),
+                'role': ('asw', 'cloudsw'),
+                'status': ('active', 'staged'),
             }
         ),
     )
@@ -940,6 +940,7 @@ class ProvisionServerNetwork(Script, Importer):
             display_field="name",
             additional_query_params={
                 "group": "production",
+                "status": "active",
                 "name__nisw": [f"{i}1-" for i in VLAN_TYPES if i],
             }
         ),
