@@ -958,6 +958,7 @@ class ProvisionServerNetwork(Script, Importer):
         z_nbdevice = data['z_nbdevice']
         z_iface = data['z_iface']
         cable_id = data['cable_id']
+        assign_mgmt = True
 
         if not data["vlan_type"] and not data["vlan"]:
             self.log_failure(f"{device}: one parameter between VLAN Type and VLAN must be specified, skipping.")
@@ -1000,7 +1001,11 @@ class ProvisionServerNetwork(Script, Importer):
             return
 
         ifaces = device.interfaces.all()
-        if ifaces:
+        if (len(ifaces) == 1 and ifaces[0].name == MGMT_IFACE_NAME and ifaces[0].count_ipaddresses == 1
+                and ifaces[0].ip_addresses.all()[0].dns_name):
+            self.log_warning(f"{device}: Skipping assignment of MGMT interface because already allocated")
+            assign_mgmt = False
+        else:
             ifaces_list = ", ".join(i.name for i in ifaces)
             self.log_failure(f"{device}: interfaces already defined: {ifaces_list}, skipping.")
             return
@@ -1038,7 +1043,8 @@ class ProvisionServerNetwork(Script, Importer):
                 return
             self._create_cable(nbiface, z_nbiface, label=cable_id if cable_id else '')
 
-        self._assign_mgmt(device)
+        if assign_mgmt:
+            self._assign_mgmt(device)
 
     def _update_z_iface(self, z_nbdevice, z_iface, vlan, type):
         """Create switch interface if needed and set vlan info."""
