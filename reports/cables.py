@@ -187,6 +187,10 @@ class Cables(Report):
                 site = self._get_site_slug_for_cable(cable)
                 if self._core_site_server_cable(cable):
                     continue
+                if (cable.termination_a_type == interface_ct
+                        and cable.termination_a.name.startswith('vcp-')):
+                    self.log_warning(cable, "VC link with no cable ID (site {})".format(site))
+                    continue
                 if site in BLANK_CABLES_SITE_BLACKLIST:
                     self.log_warning(cable, "blank cable label (site {})".format(site))
                     continue
