@@ -1001,14 +1001,18 @@ class ProvisionServerNetwork(Script, Importer):
             return
 
         ifaces = device.interfaces.all()
-        if (len(ifaces) == 1 and ifaces[0].name == MGMT_IFACE_NAME and ifaces[0].count_ipaddresses == 1
-                and ifaces[0].ip_addresses.all()[0].dns_name):
-            self.log_warning(f"{device}: Skipping assignment of MGMT interface because already allocated")
-            assign_mgmt = False
-        else:
-            ifaces_list = ", ".join(i.name for i in ifaces)
-            self.log_failure(f"{device}: interfaces already defined: {ifaces_list}, skipping.")
-            return
+        #  If the device have interface(s)
+        if ifaces:
+            # But it's only the mgmt, continue with creating the primary
+            if (len(ifaces) == 1 and ifaces[0].name == MGMT_IFACE_NAME and ifaces[0].count_ipaddresses == 1
+                    and ifaces[0].ip_addresses.all()[0].dns_name):
+                self.log_warning(f"{device}: Skipping assignment of MGMT interface because already allocated")
+                assign_mgmt = False
+            else:
+                # All the interfaces exist (mgmt & revenue), don't go further
+                ifaces_list = ", ".join(i.name for i in ifaces)
+                self.log_failure(f"{device}: interfaces already defined: {ifaces_list}, skipping.")
+                return
 
         # Assigning first the primary IPs as it can fail some validation step
         if data["vlan_type"]:
