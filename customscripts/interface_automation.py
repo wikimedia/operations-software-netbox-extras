@@ -1067,6 +1067,7 @@ class ProvisionServerNetwork(Script, Importer):
         z_nbiface.mode = 'access'
         z_nbiface.untagged_vlan = vlan
         z_nbiface.enabled = True
+        z_nbiface.mtu = 9192
         z_nbiface.save()
         self.log_success(f"{z_nbiface.device}:{z_nbiface} configured vlan.")
         return z_nbiface
