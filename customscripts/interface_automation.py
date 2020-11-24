@@ -771,7 +771,6 @@ class ImportPuppetDB(Script, Importer):
         return "\n".join(messages)
 
 
-MIGRATED_PRIMARY_SITES = ("ulsfo", "eqsin", "esams", "eqiad")
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"
 VLAN_TYPES = (
@@ -1144,16 +1143,11 @@ class ProvisionServerNetwork(Script, Importer):
         device.save()
         self.log_success(f"{device}: marked IPv4 address {ip_v4} as primary IPv4 for device.")
 
-        if device.site.slug not in MIGRATED_PRIMARY_SITES:
-            self._print_info_for_commit(device.site.slug, ip_v4, dns_name)
-
         # Allocate additional IPs
         for letter in ascii_lowercase[:cassandra_instances]:
             extra_ip_address = prefix_v4.get_first_available_ip()
             extra_dns_name = f"{device.name}-{letter}.{dns_suffix}"
             self._add_ip(extra_ip_address, extra_dns_name, prefix_v4, iface, device)
-            if device.site.slug not in MIGRATED_PRIMARY_SITES:
-                self._print_info_for_commit(device.site.slug, extra_ip_address, extra_dns_name)
 
         if prefix_v6 is None:
             self.log_warning(f"{device}: no IPv6 prefix found for VLAN {vlan.name}, skipping IPv6 allocation.")
@@ -1175,19 +1169,8 @@ class ProvisionServerNetwork(Script, Importer):
         device.save()
         self.log_success(f"{device}: marked IPv6 address {ip_v6} as primary IPv6.")
 
-        if device.site.slug not in MIGRATED_PRIMARY_SITES and dns_name_v6:
-            self._print_info_for_commit(device.site.slug, ip_v6, dns_name_v6)
         # Whatever happen, as long as the interface is created, return it
         return iface
-
-    def _print_info_for_commit(self, site, address, dns_name):
-        """Print a warning message that a manual commit is required with the details of the record."""
-        ip = ipaddress.ip_interface(address).ip
-        self.log_warning(f"DC {site} has not yet been migrated for primary records. Manual "
-                         f"commit in the operations/dns repository is required. See "
-                         f"[DNS Transition](https://wikitech.wikimedia.org/wiki/Server_Lifecycle/DNS_Transition)."
-                         f"\n\n    IPv{ip.version}:  {ip}\n    PTRv{ip.version}: {ip.reverse_pointer}"
-                         f"\n    DNSv{ip.version}: {dns_name}")
 
     def _get_vlan(self, vlan_type, device):
         """Find and return the appropriate VLAN that matches the type and device location."""
