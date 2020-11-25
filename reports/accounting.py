@@ -24,7 +24,7 @@ class Accounting(Report):
 
     description = __doc__
 
-    def run(self):
+    def run(self, job_results):
         """Load the config file and initializes the Google Sheets API."""
         config = configparser.ConfigParser(interpolation=None)
         config.read(CONFIG_FILE)
@@ -33,7 +33,7 @@ class Accounting(Report):
             config["service-credentials"], config["accounting"]["sheet_id"], config["accounting"]["range"],
         )
 
-        super().run()
+        return super().run(job_results)
 
     @staticmethod
     def get_assets_from_accounting(creds, sheet_id, range):

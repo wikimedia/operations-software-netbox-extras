@@ -1,5 +1,4 @@
 from dcim.models import Device
-from extras.constants import LOG_LEVEL_CODES
 from extras.scripts import Script, StringVar
 
 
@@ -64,5 +63,5 @@ class OfflineDevice(Script):
     def _format_logs(self):
         """Return all log messages properly formatted."""
         return "\n".join(
-            "[{level}] {msg}".format(level=LOG_LEVEL_CODES.get(level), msg=message) for level, message in self.log
+            "[{level}] {msg}".format(level=level, msg=message) for level, message in self.log
         )

@@ -19,12 +19,10 @@ from django.contrib.contenttypes.models import ContentType
 
 from dcim.choices import CableStatusChoices, CableTypeChoices, InterfaceTypeChoices
 from dcim.models import Cable, Device, Interface, VirtualChassis
-from extras.constants import LOG_LEVEL_CODES
 from extras.scripts import BooleanVar, ChoiceVar, FileVar, ObjectVar, Script, StringVar, TextVar
 from ipam.models import IPAddress, Prefix, VLAN
 from ipam.filters import PrefixFilterSet
 from utilities.choices import ColorChoices
-from utilities.forms import APISelect
 from virtualization.models import VirtualMachine
 
 CONFIGFILE = "/etc/netbox/reports.cfg"
@@ -234,19 +232,19 @@ class Importer:
         except ObjectDoesNotExist:
             self.log_info(f"Creating {address}")
             ipaddr = IPAddress(address=str(address),
-                               interface=nbiface, role=role)
+                               assigned_object=nbiface, role=role)
             ipaddr.save()
 
-        oldiface = ipaddr.interface
+        oldiface = ipaddr.assigned_object
         if oldiface:
-            if ipaddr.interface.virtual_machine:
-                olddev = ipaddr.interface.virtual_machine
+            if hasattr(oldiface, 'virtual_machine'):
+                olddev = oldiface.virtual_machine
             else:
-                olddev = ipaddr.interface.device
+                olddev = oldiface.device
         else:
             olddev = None
 
-        if nbiface.virtual_machine:
+        if hasattr(nbiface, 'virtual_machine'):
             newdev = nbiface.virtual_machine
         else:
             newdev = nbiface.device
@@ -270,11 +268,11 @@ class Importer:
             # on same device but different interface
             if ipaddr.interface.name not in networking["interfaces"]:
                 # basically renaming a device so we need to copy the description field
-                nbiface.description = ipaddr.interface.description
+                nbiface.description = ipaddr.assigned_object.description
                 nbiface.save()
 
         # finally actually reassign interface
-        ipaddr.interface = nbiface
+        ipaddr.assigned_object = nbiface
         if ipaddr.status != "active" or ipaddr.status is None:
             self.log_info(f"Non-active IP address {ipaddr} being assigned, old status {ipaddr.status}")
         ipaddr.status = "active"
@@ -367,7 +365,7 @@ class Importer:
         except ObjectDoesNotExist:
             self.log_success(f"{address}: created, {role}, no interface and active")
             ipaddr = IPAddress(address=str(address),
-                               interface=None, role=role,
+                               assigned_object=None, role=role,
                                status='active')
             ipaddr.save()
         self._assign_rdns(ipaddr)
@@ -823,7 +821,7 @@ CSV_HEADERS = ('device',
 def format_logs(logs):
     """Return all log messages properly formatted."""
     return "\n".join(
-        "[{level}] {msg}".format(level=LOG_LEVEL_CODES.get(level), msg=message) for level, message in logs
+        "[{level}] {msg}".format(level=level, msg=message) for level, message in logs
     )
 
 
@@ -901,31 +899,23 @@ class MoveServer(Script, Importer):
         description = ("More exactly: keep the same vlan and IP.")
         commit_default = False
 
-    # TODO convert to NB 2.9 with proper select
     device = ObjectVar(
         required=True,
         description=("Server. (Required)"),
-        queryset=Device.objects.filter(device_role__slug='server'),
-        widget=APISelect(
-            api_url="/api/dcim/devices/",
-            additional_query_params={
-                'role': 'server',
-            }
-        ),
+        model=Device,
+        query_params={
+            'role': 'server',
+        }
     )
-    # TODO convert to NB 2.9 with proper select, to only show the ToR of the selected device
     z_nbdevice = ObjectVar(
         required=True,
         label="New switch",
         description=("New top of rack switch. (Required)"),
-        queryset=Device.objects.filter(device_role__slug__in=('asw', 'cloudsw'), status__in=('active', 'staged')),
-        widget=APISelect(
-            api_url="/api/dcim/devices/",
-            additional_query_params={
-                'role': ('asw', 'cloudsw'),
-                'status': ('active', 'staged'),
-            }
-        ),
+        model=Device,
+        query_params={
+            'role': ('asw', 'cloudsw'),
+            'status': ('active', 'staged'),
+        }
     )
     z_iface = StringVar(label="Switch interface", description="Switch interface. (Required)", required=True)
 
@@ -1029,37 +1019,29 @@ class ProvisionServerNetwork(Script, Importer):
         description = ("More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan.")
         commit_default = False
 
-    # TODO convert to NB 2.9 with proper select
     device = ObjectVar(
         required=True,
         description=("Inventory or planned server. (Required)"),
-        queryset=Device.objects.filter(device_role__slug='server', status__in=('inventory', 'planned')),
-        widget=APISelect(
-            api_url="/api/dcim/devices/",
-            additional_query_params={
-                'role': 'server',
-                'status': ('inventory', 'planned'),
-            }
-        ),
+        model=Device,
+        query_params={
+            'role': 'server',
+            'status': ('inventory', 'planned'),
+        }
     )
 
-    # TODO convert to NB 2.9 with proper select, to only show the ToR of the selected device
     z_nbdevice = ObjectVar(
         required=True,
         label="Switch",
         description=("Top of rack switch. (Required)"),
-        queryset=Device.objects.filter(device_role__slug__in=('asw', 'cloudsw'), status__in=('active', 'staged')),
-        widget=APISelect(
-            api_url="/api/dcim/devices/",
-            additional_query_params={
-                'role': ('asw', 'cloudsw'),
-                'status': ('active', 'staged'),
-            }
-        ),
+        model=Device,
+        query_params={
+            'role': ('asw', 'cloudsw'),
+            'status': ('active', 'staged'),
+        }
     )
 
-    # TODO convert to NB 2.9 with proper select, to only show the interfaces of the selected switch
     z_iface = StringVar(label="Switch interface", description="Switch interface. (Required)", required=True)
+
     cable_id = StringVar(label="Cable ID", required=False)
 
     skip_ipv6_dns = BooleanVar(
@@ -1088,16 +1070,12 @@ class ProvisionServerNetwork(Script, Importer):
         label="VLAN",
         description=("Select the specific VLAN if the VLAN Type parameter doesn't support the device's VLAN. The "
                      "VLAN Type and VLAN parameters are mutually exclusive."),
-        queryset=VLAN.objects.filter(*VLAN_QUERY_FILTERS, status="active", group__name="production"),
-        widget=APISelect(
-            api_url="/api/ipam/vlans/",
-            display_field="name",
-            additional_query_params={
-                "group": "production",
-                "status": "active",
-                "name__nisw": [f"{i}1-" for i in VLAN_TYPES if i],
-            }
-        ),
+        model=VLAN,
+        query_params={
+            "group": "production",
+            "status": "active",
+            "name__nisw": [f"{i}1-" for i in VLAN_TYPES if i],
+        }
     )
 
     def run(self, data, commit):
@@ -1367,7 +1345,7 @@ class ProvisionServerNetwork(Script, Importer):
             status="active",
             dns_name=dns_name,
             vrf=prefix.vrf.pk if prefix.vrf else None,
-            interface=iface,
+            assigned_object=iface,
             tenant=device.tenant,
         )
         address.save()

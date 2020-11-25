@@ -69,8 +69,6 @@ class Cables(Report):
             else:
                 dev = cable.device
                 if dev is None:
-                    dev = cable.virtual_machine
-                if dev is None:
                     self.log_failure(None,
                                      ("incorrectly named {} cable termination not assigned to any device"
                                       "(interface id: {}): {}")
@@ -115,8 +113,7 @@ class Cables(Report):
         """Proxy to _port_names_test with values for checking interfaces."""
         self._port_names_test(
             Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES)
-            .exclude(device__device_role__slug='server')
-            .filter(virtual_machine__isnull=True),
+            .exclude(device__device_role__slug='server'),
             re.compile((r"|".join(INTERFACES_REGEXP))),
             "interface",
         )
