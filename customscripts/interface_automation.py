@@ -667,6 +667,7 @@ class ImportNetworkFacts(Script, Importer):
     class Meta:
         name = "Import Interfaces from a JSON blob"
         description = "Accept a JSON blob and resolve interface and IP address differences."
+        commit_default = False
 
     device = StringVar(description="The device name to import interfaces and IP addresses for.",
                        label="Device")
@@ -728,6 +729,7 @@ class ImportPuppetDB(Script, Importer):
     class Meta:
         name = "Import Interfaces, IPAddresses, Cables and switch ports from PuppetDB"
         description = "Access PuppetDB and resolve interface and IP address differences."
+        commit_default = False
 
     device = StringVar(description="The device name(s) to import interface(s) for (space separated)",
                        label="Devices")
@@ -830,6 +832,7 @@ class ProvisionServerNetworkCSV(Script):
     class Meta:
         name = "Provision multiple servers network attributes from a CSV"
         description = ("More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan.")
+        commit_default = False
 
     csv_file = FileVar(
         required=True,
@@ -896,6 +899,7 @@ class MoveServer(Script, Importer):
     class Meta:
         name = "Move a server within the same row"
         description = ("More exactly: keep the same vlan and IP.")
+        commit_default = False
 
     # TODO convert to NB 2.9 with proper select
     device = ObjectVar(
@@ -1023,6 +1027,7 @@ class ProvisionServerNetwork(Script, Importer):
     class Meta:
         name = "Provision a server's network attributes"
         description = ("More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan.")
+        commit_default = False
 
     # TODO convert to NB 2.9 with proper select
     device = ObjectVar(

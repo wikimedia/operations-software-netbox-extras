@@ -9,6 +9,7 @@ class OfflineDevice(Script):
         name = 'Offline a device with extra actions'
         description = ('Set the device status to Offline (unracked), unset its position and delete all interfaces '
                        'and related IP addresses.')
+        commit_default = False
 
     devices = StringVar(
         label='Device name(s)',
