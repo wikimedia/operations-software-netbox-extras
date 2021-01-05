@@ -280,7 +280,7 @@ class Importer:
         if ipaddr.description == "reserved for infra":
             ipaddr.description = ""
 
-        if (iface == networking["primary"] and is_primary):
+        if is_primary:
             # Try assigning DNS name and getting information about DNS.
             output = self._assign_name(ipaddr, networking, is_ipv6)
             ipaddr.is_primary = True
@@ -563,36 +563,32 @@ class Importer:
 
             # FIXME /32 bug things here
             vipexempt = any([r.match(device.name) for r in NO_VIP_RE])
-            if "bindings" in iface_dict:
-                for binding in iface_dict["bindings"]:
-                    address = self._process_binding_address(binding, False, is_anycast, (vipexempt and not is_vdev))
-                    if address is None or nbiface is None:
-                        continue
-                    # process ipv4 addresses
-                    isprimary = False
-                    if "ip" in iface_dict and binding["address"] == iface_dict["ip"]:
-                        isprimary = True
-                    output = output + self._assign_ip_to_interface(address,
-                                                                   nbiface,
-                                                                   networking,
-                                                                   iface,
-                                                                   isprimary,
-                                                                   False)
-            if "bindings6" in iface_dict:
-                for binding in iface_dict["bindings6"]:
-                    address = self._process_binding_address(binding, True, is_anycast, (vipexempt and not is_vdev))
-                    if address is None or nbiface is None:
-                        continue
-                    # process ipv4 addresses
-                    isprimary = False
-                    if "ip" in iface_dict and binding["address"] == iface_dict["ip6"]:
-                        isprimary = True
-                    output = output + self._assign_ip_to_interface(address,
-                                                                   nbiface,
-                                                                   networking,
-                                                                   iface,
-                                                                   isprimary,
-                                                                   True)
+            # process ipv4 addresses
+            for binding in iface_dict.get('bindings', []):
+                address = self._process_binding_address(binding, False, is_anycast, (vipexempt and not is_vdev))
+                if address is None:
+                    continue
+                is_primary = (iface == networking['primary'] and str(address.ip) == networking['ip'])
+                output = output + self._assign_ip_to_interface(address,
+                                                               nbiface,
+                                                               networking,
+                                                               iface,
+                                                               is_primary,
+                                                               False)
+            # process ipv6 addresses
+            for binding in iface_dict.get('bindings6', []):
+                address = self._process_binding_address(binding, True, is_anycast, (vipexempt and not is_vdev))
+                if address is None:
+                    continue
+                # the primary ipv6 address is currently a mapped ipv6 address so it should end with networking['ip']
+                is_primary = (iface == networking['primary']
+                              and str(address.ip).endswith(networking['ip'].replace('.', ':')))
+                output = output + self._assign_ip_to_interface(address,
+                                                               nbiface,
+                                                               networking,
+                                                               iface,
+                                                               is_primary,
+                                                               True)
             # Now that we have tackled the interfaces and their IPs, it's time for the cables and vlan using LLDP
             # If neighbor + port set, find the real switch (either standalone or VC member)
             if iface in lldp and 'neighbor' in lldp[iface] and 'port' in lldp[iface]:
