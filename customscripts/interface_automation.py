@@ -304,9 +304,21 @@ class Importer:
         return output
 
     def _process_binding_address(self, binding, is_ipv6, is_anycast, vip_exempt):
-        """Convert a binding to an ipaddress.ip_interface object, possibly pushing it to VIP processing
-           (instead of being considered for attaching to an interface). Returns None if VIP, or an
-           ipaddress.ip_interface object."""
+        """Convert a binding to an ipaddress.ip_interface object.
+
+        The binding may be considered for VIP processing, instead of being considered for attaching
+        to an interface.
+        Arguments:
+            binding (dict): A dictionary describing the binding
+            is_ipv6 (bool): indicate if the binding is for an ipv6 address
+            is_anycast (bool): indicate if the binding is for an anycast address
+            vip_exempt (bool): indicate if the binding is for a binding exampt from vip processing
+
+        Returns:
+            (ipaddress.ip_interface, None): if the binding is a VIP or SLAAC address return None,
+                otherwise return the converted ipaddress.ip_interface object.
+
+        """
         addr = binding["address"]
         if is_ipv6:
             # we need to translate the netmask6 exposed by puppet into a prefix length since ipaddress
@@ -321,9 +333,10 @@ class Importer:
             # We skip link local and loopback addresses
             return None
 
-        # Warn the user if one of the IP is an auto-config IP
+        # Warn the user if one of the IP is an auto-config IP and skip it
         if is_ipv6 and address.exploded[27:32] == 'ff:fe':
-            self.log_warning(f"{address} is a SLAAC IP")
+            self.log_warning(f"{address}: skipping SLAAC IP")
+            return None
 
         if (vip_exempt):
             # FIXME
