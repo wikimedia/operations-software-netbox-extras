@@ -159,30 +159,29 @@ class Netbox:
             self._collect_device(vm, False)
 
         for address in self.addresses.values():
-            if address.interface is None:
+            if address.assigned_object is None:
                 name = NO_DEVICE_NAME
                 physical = False
-
-                if not address.dns_name:
-                    logger.debug('%s:%s has no DNS name', name, address)
-                    continue
+            elif address.assigned_object_type == 'dcim.interface':
+                address.assigned_object = self.physical_interfaces[address.assigned_object_id]
+                name = address.assigned_object.device.name
+                physical = True
+            elif address.assigned_object_type == 'virtualization.vminterface':
+                address.assigned_object = self.virtual_interfaces[address.assigned_object_id]
+                name = address.assigned_object.virtual_machine.name
+                physical = False
             else:
-                try:
-                    address.interface = self.physical_interfaces[address.interface.id]
-                    name = address.interface.device.name
-                    physical = True
-                except KeyError:
-                    address.interface = self.virtual_interfaces[address.interface.id]
-                    name = address.interface.virtual_machine.name
-                    physical = False
+                logger.error('Unsupported assigned object type: %s', address.assigned_object_type)
+                continue
 
-                if name not in self.devices:
-                    logger.warning('Device %s of IP %s not in devices, skipping.', name, address)
-                    continue
+            if name != NO_DEVICE_NAME and name not in self.devices:
+                logger.warning('Device %s of IP %s not in devices, skipping.', name, address)
+                continue
 
-                if not address.dns_name:
-                    logger.debug('%s:%s has no DNS name', name, address.interface.name)
-                    continue
+            if not address.dns_name:
+                logger.debug('%s:%s has no DNS name', name,
+                             address.assigned_object.name if address.assigned_object is not None else address)
+                continue
 
             self.devices[name]['addresses'].add(address)
             self.devices[name]['physical'] = physical
@@ -443,7 +442,7 @@ class Records:
 
             # Generate the additional asset tag mgmt record only for physical devices for which the hostname is
             # different from the asset tag.
-            if (address.interface is not None and address.interface.mgmt_only and (
+            if (address.assigned_object is not None and address.assigned_object.mgmt_only and (
                     device.name.lower() != device.asset_tag.lower()
                     or device.status.value in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES)):
                 records.append(ForwardRecord(zone, device.asset_tag.lower(), address.address))
@@ -479,8 +478,8 @@ class Records:
                     suffix = 'global'
 
             else:  # try to gather it from the device it's attached to
-                if address.interface:
-                    suffix = address.interface.device.site.slug
+                if address.assigned_object:
+                    suffix = address.assigned_object.device.site.slug
                 else:
                     logger.warning('Failed to find DC for address %s from prefix or device, using global', address)
                     suffix = 'global'
