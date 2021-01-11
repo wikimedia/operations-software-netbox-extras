@@ -22,7 +22,7 @@ KEEP_YEARLY=10
 clean_dumps() {
     local pattern=$1
     local keep=$2
-    for dir in $(find "$DUMPPATH" -name "$pattern" -type d | sort -h -r | tail -n +"$keep"); do 
+    for dir in $(find "$DUMPPATH" -wholename "$DUMPPATH/$pattern" -type d | sort -h -r | tail -n +"$keep"); do
         # Carefully remove a directory.
         rm -v -f "$dir"/*.csv
         rmdir -v "$dir"
@@ -47,7 +47,7 @@ pushd "$DUMPPATH"
 
 # This is temporary, to fix up existing old backups.
 # Preserve the newest member of non-existant monthly, yearly and daily sets.
-for dir in $(find "$DUMPPATH" -name "20??-??-??-??:??" -type d | sort -h -r); do
+for dir in $(find "$DUMPPATH" -wholename "$DUMPPATH/20??-??-??-??:??" -type d | sort -h -r); do
     dir=$(basename "$dir")
     echo "$dir" | cut -d'-' -f1,2,3 --output-delimiter=' ' | while read year month day; do
         # fallback in case we don't have old rotation rules
