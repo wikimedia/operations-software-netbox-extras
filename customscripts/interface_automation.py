@@ -23,7 +23,7 @@ from extras.scripts import BooleanVar, ChoiceVar, FileVar, ObjectVar, Script, St
 from ipam.models import IPAddress, Prefix, VLAN
 from ipam.filters import PrefixFilterSet
 from utilities.choices import ColorChoices
-from virtualization.models import VirtualMachine
+from virtualization.models import VirtualMachine, VMInterface
 
 CONFIGFILE = "/etc/netbox/reports.cfg"
 
@@ -487,7 +487,34 @@ class Importer:
         if nbcable is None:
             self._create_cable(nbiface, z_nbiface, label=label)
 
-    def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_virtual=False):
+    def _make_interface_vm(self, device, iface, iface_dict, mtu):
+        # only set MTU if it is non-default and not a loopback
+        nbiface = VMInterface(name=iface,
+                              virtual_machine=device,
+                              mtu=mtu)
+        nbiface.save()
+        return nbiface
+
+    def _make_interface(self, device, iface, iface_dict, net_driver, is_vdev, mtu):
+        # this is the default 'type' for the device
+        iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED
+        if is_vdev:
+            # if it's identified as a virtual device, we make it virtual
+            iface_fmt = InterfaceTypeChoices.TYPE_VIRTUAL
+        elif iface in net_driver:
+            # otherwise if the speed is 10000 we make it 10GE
+            if net_driver[iface]["speed"] == 10000:
+                iface_fmt = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
+
+        nbiface = Interface(name=iface,
+                            mgmt_only=False,
+                            device=device,
+                            type=iface_fmt,
+                            mtu=mtu)
+        nbiface.save()
+        return nbiface
+
+    def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_vm=False):
         """Resolve one device's interfaces and ip addresses based on a net_driver, networking and lldp dictionary
            as would be obtained from PuppetDB under those key names."""
         output = []
@@ -496,10 +523,10 @@ class Importer:
         for dif in device.interfaces.all():
             if dif.name == '##PRIMARY##' and 'primary' in networking:
                 dif.name = networking['primary']
-                if net_driver[networking['primary']]["speed"] == 10000:
+                if ((not is_vm) and (net_driver[networking['primary']]["speed"] == 10000)):
                     dif.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
                 dif.save()
-                self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {dif.name} ({dif.type})")
+                self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {dif.name}")
                 break
 
         for iface, iface_dict in networking["interfaces"].items():
@@ -514,34 +541,14 @@ class Importer:
                     nbiface = device.interfaces.get(name=iface)
                 except ObjectDoesNotExist:
                     self.log_info(f"Creating interface {iface} for device {device}")
-
-                    iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED
-
-                    # heuristically determine the device format
-                    if is_vdev or is_virtual:
-                        iface_fmt = InterfaceTypeChoices.TYPE_VIRTUAL
-                    elif iface in net_driver:
-                        if net_driver[iface]["speed"] == 10000:
-                            iface_fmt = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
-
                     # only set MTU if it is non-default and not a loopback
                     mtu = None
                     if "mtu" in iface_dict and iface_dict["mtu"] != 1500 and iface != "lo":
                         mtu = iface_dict["mtu"]
-
-                    if is_virtual:
-                        nbiface = Interface(name=iface,
-                                            mgmt_only=False,
-                                            virtual_machine=device,
-                                            type=iface_fmt,
-                                            mtu=mtu)
+                    if is_vm:
+                        nbiface = self._make_interface_vm(device, iface, iface_dict, mtu)
                     else:
-                        nbiface = Interface(name=iface,
-                                            mgmt_only=False,
-                                            device=device,
-                                            type=iface_fmt,
-                                            mtu=mtu)
-                    nbiface.save()
+                        nbiface = self._make_interface(device, iface, iface_dict, net_driver, is_vdev, mtu)
 
             # FIXME /32 bug things here
             vipexempt = any([r.match(device.name) for r in NO_VIP_RE])
