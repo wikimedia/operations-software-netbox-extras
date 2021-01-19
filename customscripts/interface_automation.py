@@ -355,13 +355,13 @@ class Importer:
             elif (ipaddrs.count() == 0):
                 raise ObjectDoesNotExist()
             ipaddr = ipaddrs[0]
-            if ipaddr.role != role or ipaddr.interface is not None or ipaddr.status != "active":
+            if ipaddr.role != role or ipaddr.assigned_object is not None or ipaddr.status != "active":
                 ipaddr.role = role
                 # We specially handle VIP addresses but do not allow them to be bound
-                ipaddr.interface = None
+                ipaddr.assigned_object = None
                 ipaddr.status = "active"
                 ipaddr.save()
-                self.log_success(f"{address}: {role}, no interface and active")
+                self.log_success(f"{address}: {role}, set to no interface and active")
         except ObjectDoesNotExist:
             self.log_success(f"{address}: created, {role}, no interface and active")
             ipaddr = IPAddress(address=str(address),
