@@ -519,16 +519,28 @@ class Importer:
            as would be obtained from PuppetDB under those key names."""
         output = []
 
-        # clean up potential ##PRIMARY## interface
-        for dif in device.interfaces.all():
-            if dif.name == '##PRIMARY##' and 'primary' in networking:
-                dif.name = networking['primary']
+        for device_interface in device.interfaces.all():
+            # Clean up potential ##PRIMARY## interfaces
+            if device_interface.name == '##PRIMARY##' and 'primary' in networking:
+                device_interface.name = networking['primary']
                 if ((not is_vm) and (net_driver[networking['primary']]["speed"] == 10000)):
-                    dif.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
-                dif.save()
-                self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {dif.name}")
-                break
-
+                    device_interface.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
+                device_interface.save()
+                self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {device_interface.name}")
+            # Remove interfaces that have been removed by reimaging or similar.
+            elif (device_interface.name not in networking["interfaces"]
+                  and device_interface.name not in ("mgmt", "##PRIMARY##")):
+                # clean up interface if there are no IPs assigned, and there are no caebles connected
+                device_iface_ct = ContentType.objects.get_for_model(device_interface)
+                ipcount = IPAddress.objects.filter(assigned_object_id=device_interface.id,
+                                                   assigned_object_type=device_iface_ct).count()
+                if (ipcount == 0) and (device_interface.cable is None):
+                    self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}")
+                    device_interface.delete()
+                else:
+                    self.log_error(f"{device.name}: We want to remove interface {device_interface.name}, however "
+                                   "it still has a cable or IP address associated with it. "
+                                   "See https://wikitech.wikimedia.org/wiki/Netbox#Would_like_to_remove_interface")
         for iface, iface_dict in networking["interfaces"].items():
             is_vdev = ((":" in iface) or ("." in iface) or ("lo" == iface))
             is_anycast = (iface.startswith("lo:anycast"))
