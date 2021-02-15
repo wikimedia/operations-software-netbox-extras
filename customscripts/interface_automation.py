@@ -332,7 +332,7 @@ class Importer:
             # figure out the actual netmask from the prefix
             prefixq = PrefixFilterSet().search_contains(Prefix.objects.all(), "", str(address))
             if (not prefixq):
-                self.log_error(f"Can't find matching prefix for {address} when fixing netmask!")
+                self.log_failure(f"Can't find matching prefix for {address} when fixing netmask!")
                 return None
             realnetmask = max([i.prefix.prefixlen for i in prefixq])
             address = ipaddress.ip_interface(f"{addr}/{realnetmask}")
