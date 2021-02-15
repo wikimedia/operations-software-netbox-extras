@@ -527,20 +527,6 @@ class Importer:
                     device_interface.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
                 device_interface.save()
                 self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {device_interface.name}")
-            # Remove interfaces that have been removed by reimaging or similar.
-            elif (device_interface.name not in networking["interfaces"]
-                  and device_interface.name not in ("mgmt", "##PRIMARY##")):
-                # clean up interface if there are no IPs assigned, and there are no caebles connected
-                device_iface_ct = ContentType.objects.get_for_model(device_interface)
-                ipcount = IPAddress.objects.filter(assigned_object_id=device_interface.id,
-                                                   assigned_object_type=device_iface_ct).count()
-                if (ipcount == 0) and (device_interface.cable is None):
-                    self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}")
-                    device_interface.delete()
-                else:
-                    self.log_failure(f"{device.name}: We want to remove interface {device_interface.name}, however "
-                                     "it still has a cable or IP address associated with it. "
-                                     "See https://wikitech.wikimedia.org/wiki/Netbox#Would_like_to_remove_interface")
         for iface, iface_dict in networking["interfaces"].items():
             is_vdev = ((":" in iface) or ("." in iface) or ("lo" == iface))
             is_anycast = (iface.startswith("lo:anycast"))
@@ -612,6 +598,21 @@ class Importer:
                 # Now we create or update the cable
                 self._update_cable(lldp[iface], nbiface, z_nbiface)
 
+        # Now we can clean up all of the interfaces that are no longer present in PuppetDB.
+        for device_interface in device.interfaces.all():
+            if (device_interface.name not in networking["interfaces"]
+               and device_interface.name not in ("mgmt", "##PRIMARY##")):
+                # clean up interface if there are no IPs assigned, and there are no caebles connected
+                device_iface_ct = ContentType.objects.get_for_model(device_interface)
+                ipcount = IPAddress.objects.filter(assigned_object_id=device_interface.id,
+                                                   assigned_object_type=device_iface_ct).count()
+                if (ipcount == 0) and (device_interface.cable is None):
+                    self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}")
+                    device_interface.delete()
+                else:
+                    self.log_failure(f"{device.name}: We want to remove interface {device_interface.name}, however "
+                                     "it still has a cable or IP address associated with it. "
+                                     "See https://wikitech.wikimedia.org/wiki/Netbox#Would_like_to_remove_interface")
         return output
 
     def _validate_device(self, device):
