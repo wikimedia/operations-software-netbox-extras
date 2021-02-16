@@ -8,9 +8,8 @@ import re
 from dcim.choices import DeviceStatusChoices
 from dcim.models import Device, InventoryItem
 from extras.reports import Report
-from extras.models import CustomFieldValue
 
-from django.db.models import Count, Prefetch
+from django.db.models import Count
 
 
 SITE_BLACKLIST = ()
@@ -25,32 +24,8 @@ JUNIPER_INVENTORY_PART_EXCLUDES = [
 JUNIPER_INVENTORY_DESC_RE = re.compile(r".*Purchase:\d{4}-\d{2}-\d{2},Task:(T\d{6}|RT #\d+).*")
 
 
-def cf(device, field):
-    """Get the value for the specified custom field name.
-
-    This, combined with the a prefetch_related() results into much more
-    efficient access of custom fields and their values. See:
-    https://github.com/digitalocean/netbox/issues/3185
-
-    Be warned that this treats empty values as non-existing fields.
-    """
-    for cfv in device.custom_field_values.all():
-        if cfv.field.name == field:
-            return cfv.value
-    return None
-
-
-# monkey-patch the Device model for easy access to our custom cf() function
-Device.mpcf = cf
-
-
 def _get_devices_query(cf=False):
     devices = Device.objects.exclude(site__slug__in=SITE_BLACKLIST)
-    if cf:
-        devices = devices.prefetch_related(
-            Prefetch("custom_field_values", queryset=CustomFieldValue.objects.select_related("field"))
-        )
-
     return devices
 
 
@@ -72,11 +47,11 @@ class Coherence(Report):
     def test_purchase_date(self):
         """Test that each device has a purchase date."""
         success_count = 0
-        for device in _get_devices_query(cf=True):
-            purchase_date = device.mpcf("purchase_date")
+        for device in _get_devices_query():
+            purchase_date = device.cf["purchase_date"]
             if purchase_date is None:
                 self.log_failure(device, "missing purchase date")
-            elif purchase_date > datetime.datetime.today().date():
+            elif datetime.date.fromisoformat(purchase_date) > datetime.datetime.today().date():
                 self.log_failure(device, "purchase date is in the future")
             else:
                 success_count += 1
@@ -126,10 +101,10 @@ class Coherence(Report):
         """Determine if the procurement ticket matches the expected format."""
         success_count = 0
         for device in _get_devices_query(cf=True):
-            ticket = str(device.mpcf("ticket"))
+            ticket = str(device.cf["ticket"])
             if TICKET_RE.fullmatch(ticket):
                 success_count += 1
-            elif device.mpcf("ticket") is None:
+            elif device.cf["ticket"] is None:
                 self.log_failure(device, "missing procurement ticket")
             else:
                 self.log_failure(device, "malformed procurement ticket: {}".format(ticket))
@@ -204,7 +179,7 @@ class Rack(Report):
             good = True
             msgs = ["connected console ports attached to unracked device {}:".format(device.name)]
             for port in consoleports:
-                if port.connection_status:
+                if port.cable:
                     msgs.append(port.name)
                     good = False
             if not good:

@@ -123,7 +123,6 @@ class Accounting(Report):
         """Tests whether various fields match between Accounting and Netbox."""
         devices = {}
         qs = Device.objects.filter(serial__in=self.assets.keys())
-        qs = qs.prefetch_related("custom_field_values__field")
         for device in qs:
             devices[device.serial] = device
 
@@ -153,17 +152,9 @@ class Accounting(Report):
             else:
                 asset_tag_matches += 1
 
-            # this is a rather convoluted way of fetching a custom field: this
-            # is the equivalent of device.cf()["ticket"]. However, this way,
-            # combined with the prefetch_related of custom_field_values__field
-            # above, eliminates hundreds of queries and, consequently, makes
-            # this 10-20x faster. There is likely a shorter way to do this, I
-            # just haven't found it yet.
             netbox_ticket = None
-            for cfv in device.custom_field_values.all():
-                if cfv.field.name == "ticket":
-                    netbox_ticket = cfv.value
-                    break
+            if 'ticket' in device.cf:
+                netbox_ticket = device.cf['ticket']
 
             if ticket != netbox_ticket:
                 self.log_warning(
@@ -183,8 +174,7 @@ class Accounting(Report):
         newest_date = date.today() - timedelta(90)
 
         recent_devices = Device.objects.exclude(serial="").filter(
-            custom_field_values__field__name="purchase_date",
-            custom_field_values__serialized_value__range=(oldest_date, newest_date),
+            custom_field_data__purchase_date__range=(oldest_date, newest_date)
         )
 
         device_matches = 0
