@@ -15,7 +15,7 @@ class OfflineDevice(Script):
         description='Device to be offlined, space separated if more than one',
     )
 
-    def run(self, data):
+    def run(self, data, commit):
         """Offline the device."""
         try:
             self._run(data)

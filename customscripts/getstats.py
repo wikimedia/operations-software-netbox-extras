@@ -13,7 +13,7 @@ class GetDeviceStats(Script):
         name = "Get Device Statistics"
         description = "Dump a set of statistics about various devices for Prometheus."
 
-    def run(self, data):
+    def run(self, data, commit):
         counts = Counter()
         output = StringIO()
         for device in Device.objects.all().values_list(
