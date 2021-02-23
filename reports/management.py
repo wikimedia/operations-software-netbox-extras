@@ -39,7 +39,7 @@ class ManagementConsole(Report):
                 continue
 
             for port in ports:
-                if port.connection_status:
+                if port.cable:
                     successcount += 1
                     break
             else:
