@@ -13,7 +13,6 @@ from dns.exception import DNSException
 from string import ascii_lowercase
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Q
 
 from django.contrib.contenttypes.models import ContentType
 
@@ -834,7 +833,6 @@ VLAN_TYPES = (
     "cloud-hosts",
 )
 VLAN_POP_TYPES = ("public", "private")
-VLAN_QUERY_FILTERS = [~Q(name__istartswith=f"{i}1-") for i in VLAN_TYPES if i]
 FRACK_TENANT_SLUG = "fr-tech"
 
 CSV_HEADERS = ('device',
@@ -1316,7 +1314,10 @@ class ProvisionServerNetwork(Script, Importer):
         """Find and return the appropriate VLAN that matches the type and device location."""
         if device.site.slug in ("eqiad", "codfw"):
             # TODO: add support for additional VLANs of a given type (e.g. private2)
-            vlan_name = f"{vlan_type}1-{device.rack.group.slug.split('-')[-1]}-{device.site.slug}"
+            if vlan_type == 'cloud-hosts':
+                vlan_name = f"cloud-hosts1-b-{device.site.slug}"
+            else:
+                vlan_name = f"{vlan_type}1-{device.rack.group.slug.split('-')[-1]}-{device.site.slug}"
         else:
             if vlan_type not in VLAN_POP_TYPES:
                 self.log_failure(f"{device}: VLAN type {vlan_type} not available in site {device.site.slug}, skipping.")
