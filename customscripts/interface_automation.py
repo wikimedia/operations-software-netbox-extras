@@ -1349,7 +1349,7 @@ class ProvisionServerNetwork(Script, Importer):
         # Attempt to validate the row
         row = device.rack.group.slug.split("-")[-1]
         possible_rows = [part for part in vlan.name.split("-") if len(part) == 1]
-        if len(possible_rows) == 1 and not vlan.name.startswith('cloud-hosts'):
+        if len(possible_rows) == 1:
             if row != possible_rows[0]:
                 self.log_failure(
                     f"{device}: mismatch row for VLAN {vlan.name}: "
