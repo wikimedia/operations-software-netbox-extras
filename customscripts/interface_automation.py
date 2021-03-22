@@ -1315,7 +1315,7 @@ class ProvisionServerNetwork(Script, Importer):
         if device.site.slug in ("eqiad", "codfw"):
             # TODO: add support for additional VLANs of a given type (e.g. private2)
             if vlan_type == 'cloud-hosts':
-                vlan_name = f"cloud-hosts1-b-{device.site.slug}"
+                vlan_name = f"cloud-hosts1-{device.site.slug}"
             else:
                 vlan_name = f"{vlan_type}1-{device.rack.group.slug.split('-')[-1]}-{device.site.slug}"
         else:
