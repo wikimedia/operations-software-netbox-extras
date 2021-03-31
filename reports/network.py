@@ -49,17 +49,20 @@ class Network(Report):
                 interface_fpc = "-{}/".format(interface.device.vc_position)
                 if interface_fpc not in interface.name:
                     self.log_failure(interface,
-                                     "Interface doesn't match its switch member: {}."
-                                     .format(interface.device.vc_position))
+                                     "Interface doesn't match its switch member: {} on {}."
+                                     .format(interface.device.vc_position, interface.device))
                     continue
             # If the interface is on a standalone switch, make sure the interface starts with -0/
             else:
                 if "-0/" not in interface.name:
-                    self.log_failure(interface, "Interface on a non-VC should start with -0/.")
+                    self.log_failure(interface,
+                                     "Interface on a non-VC should start with -0/ on {}."
+                                     .format(interface.device))
                     continue
             # Make sure we don't have two types on interfaces with the same ID (number)
             if interface.name.split('-')[1] in seen_interfaces[interface.device.name]:
-                self.log_failure(interface, "Duplicated interface with different prefix (eg. xe- & ge-).")
+                self.log_failure(interface, ("Duplicated interface with different prefix (eg. xe- & ge-) on {}."
+                                             .format(interface.device)))
                 continue
             else:
                 seen_interfaces[interface.device.name].add(interface.name.split('-')[1])
