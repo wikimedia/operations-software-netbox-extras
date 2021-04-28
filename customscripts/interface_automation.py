@@ -19,6 +19,7 @@ from django.contrib.contenttypes.models import ContentType
 from dcim.choices import CableStatusChoices, CableTypeChoices, InterfaceTypeChoices
 from dcim.models import Cable, Device, Interface, VirtualChassis
 from extras.scripts import BooleanVar, ChoiceVar, FileVar, ObjectVar, Script, StringVar, TextVar
+from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix, VLAN
 from ipam.filters import PrefixFilterSet
 from utilities.choices import ColorChoices
@@ -234,6 +235,11 @@ class Importer:
                                assigned_object=nbiface, role=role)
             ipaddr.save()
 
+        if ipaddr.role in IPADDRESS_ROLES_NONUNIQUE:
+            self.log_warning(f"Skipping assigning existing IP {address} with role {ipaddr.role.value} to {iface}. "
+                             f"The IP might have the wrong netmask (expected /32 or /128 for VIP-like IPs)")
+            return output
+
         oldiface = ipaddr.assigned_object
         if oldiface:
             if hasattr(oldiface, 'virtual_machine'):
@@ -256,9 +262,9 @@ class Importer:
             # and this is not a vdev, reassign
             self.log_info(f"Taking IP address {ipaddr} from {olddev}:{ipaddr.interface}")
             self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
-            if is_ipv6 and olddev.primary_ip6 == ipaddr:
+            if is_ipv6 and olddev is not None and olddev.primary_ip6 == ipaddr:
                 olddev.primary_ip6 = None
-            elif not is_ipv6 and olddev.primary_ip4 == ipaddr:
+            elif not is_ipv6 and olddev is not None and olddev.primary_ip4 == ipaddr:
                 olddev.primary_ip4 = None
             ipaddr.interface.save()
             olddev.save()
