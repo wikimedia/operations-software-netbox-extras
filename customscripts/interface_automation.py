@@ -236,7 +236,7 @@ class Importer:
             ipaddr.save()
 
         if ipaddr.role in IPADDRESS_ROLES_NONUNIQUE:
-            self.log_warning(f"Skipping assigning existing IP {address} with role {ipaddr.role.value} to {iface}. "
+            self.log_warning(f"Skipping assigning existing IP {address} with role {ipaddr.role} to {iface}. "
                              f"The IP might have the wrong netmask (expected /32 or /128 for VIP-like IPs)")
             return output
 
