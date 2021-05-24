@@ -45,7 +45,7 @@ class PuppetDBDataMixin:
         """Return a dictionary keyed by hostname of a specified PuppetDB fact."""
         config = self._get_config()
         url = "/".join([config["puppetdb"]["url"], "/v1/facts", factname])
-        response = requests.get(url, verify=config["puppetdb"]["ca_cert"])
+        response = requests.get(url, verify=True)
         if response.status_code != 200:
             raise Exception("Cannot connect to PuppetDB {} - {} {}".format(url, response.status_code, response.text))
         return response.json()

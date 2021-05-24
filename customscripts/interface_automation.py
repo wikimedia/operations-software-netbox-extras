@@ -777,19 +777,19 @@ class ImportPuppetDB(Script, Importer):
         """Access PuppetDB for `networking`, `net_driver` and `lldp` facts."""
         # Get networking facts
         puppetdb_url = "/".join([cfg["puppetdb"]["url"], "v1/facts", "{}", device.name])
-        response = requests.get(puppetdb_url.format("networking"), verify=cfg["puppetdb"]["ca_cert"])
+        response = requests.get(puppetdb_url.format("networking"), verify=True)
         if response.status_code != 200:
             self.log_failure(f"Cannot retrieve PuppetDB `networking` facts about {device.name}")
             return None, None, None
         networking = response.json()
         # Get net_driver facts
-        response = requests.get(puppetdb_url.format("net_driver"), verify=cfg["puppetdb"]["ca_cert"])
+        response = requests.get(puppetdb_url.format("net_driver"), verify=True)
         if response.status_code != 200:
             self.log_failure(f"Cannot retrieve PuppetDB `net_driver` facts about {device.name}")
             return None, None, None
         net_driver = response.json()
         # Get lldp facts
-        response = requests.get(puppetdb_url.format("lldp"), verify=cfg["puppetdb"]["ca_cert"])
+        response = requests.get(puppetdb_url.format("lldp"), verify=True)
         if response.status_code != 200:
             self.log_failure(f"Cannot retrieve PuppetDB `lldp` facts about {device.name}")
             return None, None, None
