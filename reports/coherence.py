@@ -12,7 +12,7 @@ from extras.reports import Report
 from django.db.models import Count
 
 
-SITE_BLACKLIST = ()
+SITE_BLACKLIST = ('drmrs')
 DEVICE_ROLE_BLACKLIST = ("cablemgmt", "storagebin", "optical-device")
 ASSET_TAG_RE = re.compile(r"WMF\d{4}")
 TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")

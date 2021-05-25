@@ -42,7 +42,7 @@ INTERFACES_REGEXP = (
     r"^##PRIMARY##$",  # interface name placeholder
 )
 
-BLANK_CABLES_SITE_BLACKLIST = ('eqiad',)
+BLANK_CABLES_SITE_BLACKLIST = ('eqiad', 'drmrs')
 CORE_SITES = ('eqiad', 'codfw')
 
 interface_ct = ContentType.objects.get_for_model(Interface)
