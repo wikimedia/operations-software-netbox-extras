@@ -254,11 +254,11 @@ class Importer:
         else:
             newdev = nbiface.device
 
-        if not ipaddr.interface:
+        if not ipaddr.assigned_object:
             # no interface assigned
             self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
         elif olddev != newdev:
-            # the ip address is asigned to a completely different device
+            # the ip address is assigned to a completely different device
             # and this is not a vdev, reassign
             self.log_info(f"Taking IP address {ipaddr} from {olddev}:{ipaddr.interface}")
             self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
@@ -266,9 +266,7 @@ class Importer:
                 olddev.primary_ip6 = None
             elif not is_ipv6 and olddev is not None and olddev.primary_ip4 == ipaddr:
                 olddev.primary_ip4 = None
-            ipaddr.interface.save()
             olddev.save()
-            ipaddr.save()
         else:
             # on same device but different interface
             if ipaddr.interface.name not in networking["interfaces"]:
