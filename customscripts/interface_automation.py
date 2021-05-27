@@ -260,7 +260,7 @@ class Importer:
         elif olddev != newdev:
             # the ip address is assigned to a completely different device
             # and this is not a vdev, reassign
-            self.log_info(f"Taking IP address {ipaddr} from {olddev}:{ipaddr.interface}")
+            self.log_info(f"Taking IP address {ipaddr} from {olddev}:{ipaddr.assigned_object}")
             self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
             if is_ipv6 and olddev is not None and olddev.primary_ip6 == ipaddr:
                 olddev.primary_ip6 = None
