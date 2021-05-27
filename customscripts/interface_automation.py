@@ -571,6 +571,8 @@ class Importer:
                 address = self._process_binding_address(binding, False, is_anycast, (vipexempt and not is_vdev))
                 if address is None:
                     continue
+                if address in ipaddress.IPv4Network('192.168.0.0/16'):  # non-routed network, ignore it
+                    continue
                 is_primary = (iface == networking['primary'] and str(address.ip) == networking['ip'])
                 output = output + self._assign_ip_to_interface(address,
                                                                nbiface,
