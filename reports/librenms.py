@@ -87,7 +87,8 @@ class LibreNMSData:
                           hostname
                    FROM devices
                    WHERE serial IS NOT NULL
-                     AND serial NOT IN ("", "N/A");"""
+                     AND serial NOT IN ("", "N/A")
+                     AND `ignore` = 0;"""
             )
             for device in cursor.fetchall():
                 if not device["hardware"]:
