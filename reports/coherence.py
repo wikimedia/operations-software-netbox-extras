@@ -22,6 +22,7 @@ JUNIPER_INVENTORY_PART_EXCLUDES = [
     "EX-UM-2X4SFP",
 ]
 JUNIPER_INVENTORY_DESC_RE = re.compile(r".*Purchase:\d{4}-\d{2}-\d{2},Task:(T\d{6}|RT #\d+).*")
+INVALID_ACTIVE_NAMES = ['future', 'spare']
 
 
 def _get_devices_query(cf=False):
@@ -121,6 +122,9 @@ class Coherence(Report):
                     self.log_failure(device, "malformed device name for active device")
                 else:
                     warnings.append(device)
+            elif (any(x in device.name for x in INVALID_ACTIVE_NAMES)
+                  and device.status == DeviceStatusChoices.STATUS_ACTIVE):
+                self.log_failure(device, "Future or spare in active device name.")
             else:
                 success += 1
 

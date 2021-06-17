@@ -122,7 +122,9 @@ class Network(Report):
         self.log_success(None, "{} fine VIPs".format(success))
 
     def test_primary_ip_dns_match(self):
-        """If a device have both a primary IPv4 and IPv6 with DNS names, check that they match."""
+        """If a device have both a primary IPv4 and IPv6 with DNS names, check that they match.
+           As well as check that the primary IPs DNS names match the hostname.
+        """
 
         success = 0
         for device in (Device.objects.filter(device_role__slug="server", tenant__isnull=True)
@@ -130,6 +132,10 @@ class Network(Report):
             if not device.primary_ip4 or not device.primary_ip4.dns_name:
                 self.log_failure(device, "Device with no primary IPv4 or DNS name.")
                 continue
+            if not str(device.primary_ip4.dns_name).startswith(device.name + '.'):
+                self.log_failure(device, "Primary IPv4 DNS ({}) doesn't start with the hostname."
+                                         .format(device.primary_ip4.dns_name))
+
             if not device.primary_ip4 or not device.primary_ip6:
                 continue
             if not device.primary_ip4.dns_name or not device.primary_ip6.dns_name:
@@ -141,3 +147,20 @@ class Network(Report):
             else:
                 success += 1
         self.log_success(None, "{} devices with matching primary IPv4 & IPv6.".format(success))
+
+    def test_mgmt_dns_hostname(self):
+        """No interface on a network device should be enabled but not connected.
+
+        Exception being management switches as we don't document them in core sites.
+        """
+        success = 0
+        for ipaddress in IPAddress.objects.filter(interface__name="mgmt", dns_name__isnull=False):
+            expected_fqdn = "{}.mgmt.{}.wmnet".format(ipaddress.assigned_object.device.name,
+                                                      ipaddress.assigned_object.device.site.slug)
+            if not ipaddress.dns_name == expected_fqdn:
+                self.log_failure(ipaddress.assigned_object.device,
+                                 "Invalid management interface DNS ({} != {})."
+                                 .format(ipaddress.dns_name, expected_fqdn))
+            else:
+                success += 1
+        self.log_success(None, "{} fine mgmt DNS names".format(success))
