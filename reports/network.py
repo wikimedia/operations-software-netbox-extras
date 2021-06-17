@@ -155,8 +155,13 @@ class Network(Report):
         """
         success = 0
         for ipaddress in IPAddress.objects.filter(interface__name="mgmt", dns_name__isnull=False):
-            expected_fqdn = "{}.mgmt.{}.wmnet".format(ipaddress.assigned_object.device.name,
-                                                      ipaddress.assigned_object.device.site.slug)
+
+            tenant = ''
+            if ipaddress.assigned_object.device.tenant and ipaddress.assigned_object.device.tenant.slug == "fr-tech":
+                tenant = "frack."
+            expected_fqdn = "{}.mgmt.{}{}.wmnet".format(ipaddress.assigned_object.device.name,
+                                                        tenant,
+                                                        ipaddress.assigned_object.device.site.slug)
             if not ipaddress.dns_name == expected_fqdn:
                 self.log_failure(ipaddress.assigned_object.device,
                                  "Invalid management interface DNS ({} != {})."
