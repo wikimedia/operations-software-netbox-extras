@@ -227,6 +227,9 @@ def handle_generic(api, tablename):
     alldata = []
     for row in endpoint.all():
         dat = row.serialize()
+        # Ignore lines with empty names (breaks the sorting below) - T275587
+        if 'name' in dat and not dat['name']:
+            continue
         if "custom_fields" in dat:
             del dat["custom_fields"]
         alldata.append(dat)
