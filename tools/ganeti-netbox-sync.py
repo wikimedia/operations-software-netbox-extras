@@ -61,18 +61,9 @@ def parse_command_line_args():
 
 def setup_logging(verbose=False):
     """Setup the logging with a custom format to go to stdout."""
-    formatter = logging.Formatter(fmt="%(asctime)s [%(levelname)s] %(message)s")
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    if not verbose:
-        level = logging.INFO
-    else:
-        level = logging.DEBUG
-    handler.setLevel(level)
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=level)
     logging.getLogger("requests").setLevel(logging.WARNING)  # Silence noisy logger
-    logger.addHandler(handler)
-    logger.raiseExceptions = False
-    logger.setLevel(level)
 
 
 def ganeti_rapi_query(endpoint, base_url, user, password, ca_cert):
@@ -262,6 +253,8 @@ def sync_ganeti_nodes_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_n
 def main():
     """Entry point for Ganeti->Netbox Sync."""
     args = parse_command_line_args()
+    setup_logging(args.verbose)
+
     # Load configuration
     cfg = ConfigParser()
     cfg.read(args.config)
@@ -273,8 +266,6 @@ def main():
     netbox_cluster = cfg["profile:" + args.profile]["cluster"]
     ganeti_api = cfg["profile:" + args.profile]["api"]
     ganeti_ca_cert = cfg["auth"]["ca_cert"]
-
-    setup_logging(args.verbose)
 
     logger.debug("using ganeti api at %s", ganeti_api)
     logger.debug("using netbox api at %s", netbox_api)
