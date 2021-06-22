@@ -218,7 +218,8 @@ class Importer:
         """Perform the minor complexity of assigning an IP address to an interface as specified by
            a PuppetDB interface fact."""
         output = []
-
+        ipaddr_changed = False
+        newdev_changed = False
         # heuristically determine if this is probably anycast
         if iface.startswith("lo:anycast"):
             self.log_info(f"{address} on {iface} is being assigned as anycast.")
@@ -269,29 +270,40 @@ class Importer:
             olddev.save()
         else:
             # on same device but different interface
-            if ipaddr.interface.name not in networking["interfaces"]:
+            if ipaddr.assigned_object.name not in networking["interfaces"]:
                 # basically renaming a device so we need to copy the description field
                 nbiface.description = ipaddr.assigned_object.description
                 nbiface.save()
 
         # finally actually reassign interface
-        ipaddr.assigned_object = nbiface
+
+        if (ipaddr.assigned_object != nbiface
+           or ipaddr.description == "reserved for infra"
+           or ipaddr.role != role
+           or ipaddr.status != "active"):
+            ipaddr.assigned_object = nbiface
+            ipaddr.description = ""
+            ipaddr.role = role
+            ipaddr.status = "active"
+            ipaddr_changed = True
+
         if ipaddr.status != "active" or ipaddr.status is None:
             self.log_info(f"Non-active IP address {ipaddr} being assigned, old status {ipaddr.status}")
-        ipaddr.status = "active"
-
-        if ipaddr.description == "reserved for infra":
-            ipaddr.description = ""
 
         if is_primary:
             # Try assigning DNS name and getting information about DNS.
             output = self._assign_name(ipaddr, networking, is_ipv6)
-            ipaddr.is_primary = True
             if is_ipv6 and (newdev.primary_ip6 != ipaddr):
+                ipaddr.is_primary = True
+                ipaddr_changed = True
                 newdev.primary_ip6 = ipaddr
+                newdev_changed = True
                 self.log_info(f"Setting {ipaddr} as primary for {newdev}")
             elif not is_ipv6 and (newdev.primary_ip4 != ipaddr):
+                ipaddr.is_primary = True
+                ipaddr_changed = True
                 newdev.primary_ip4 = ipaddr
+                newdev_changed = True
                 self.log_info(f"Setting {ipaddr} as primary for {newdev}")
             else:
                 self.log_info(f"{ipaddr} is already primary for {newdev}")
@@ -300,10 +312,11 @@ class Importer:
             # FIXME this is transitional and should be removed after dns is generated
             self._assign_rdns(ipaddr)
 
-        newdev.save()
+        if newdev_changed:
+            newdev.save()
 
-        ipaddr.role = role
-        ipaddr.save()
+        if ipaddr_changed:
+            ipaddr.save()
         return output
 
     def _process_binding_address(self, binding, is_ipv6, is_anycast, vip_exempt):
