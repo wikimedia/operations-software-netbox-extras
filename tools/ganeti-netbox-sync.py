@@ -234,7 +234,7 @@ def sync_ganeti_nodes_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_n
     removals = set(nb_cluster_nodes.keys()) - set(ganeti_nodes)
     for node in removals:
         device = nb_cluster_nodes[node]
-        device.cluster_id = None
+        device.cluster = None
         if dry_run:
             save_result = True
         else:
