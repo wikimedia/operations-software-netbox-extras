@@ -18,6 +18,8 @@ import pynetbox.api
 import requests
 from requests.auth import HTTPBasicAuth
 
+
+NO_PUPPETDB_VMS = ('d-i-test',)
 logger = logging.getLogger()
 
 
@@ -266,7 +268,8 @@ def nb_fix_ganeti_interfaces(netbox_api, netbox_token, netbox_cluster, dry_run):
     """Execute PuppetDB import on any host in a list of hosts with a placeholder Interface."""
     nbapi = pynetbox.api(netbox_api, token=netbox_token)
     reimport = [str(x.virtual_machine) for x in
-                nbapi.virtualization.interfaces.filter(name='##PRIMARY##', cluster=netbox_cluster)]
+                nbapi.virtualization.interfaces.filter(name='##PRIMARY##', cluster=netbox_cluster)
+                if x.virtual_machine.name not in NO_PUPPETDB_VMS]
     if reimport:
         logger.info("Will import interfaces for {} instances.".format(len(reimport)))
         run_import_script(netbox_api, netbox_token, reimport, dry_run)
