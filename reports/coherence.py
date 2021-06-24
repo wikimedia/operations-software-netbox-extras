@@ -12,8 +12,8 @@ from extras.reports import Report
 from django.db.models import Count
 
 
-SITE_BLACKLIST = ('drmrs',)
-DEVICE_ROLE_BLACKLIST = ("cablemgmt", "storagebin", "optical-device")
+SITE_BLOCKLIST = ('drmrs',)
+DEVICE_ROLE_BLOCKLIST = ("cablemgmt", "storagebin", "optical-device")
 ASSET_TAG_RE = re.compile(r"WMF\d{4}")
 TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
 JUNIPER_INVENTORY_PART_EXCLUDES = [
@@ -26,7 +26,7 @@ INVALID_ACTIVE_NAMES = ['future', 'spare']
 
 
 def _get_devices_query(cf=False):
-    devices = Device.objects.exclude(site__slug__in=SITE_BLACKLIST)
+    devices = Device.objects.exclude(site__slug__in=SITE_BLOCKLIST)
     return devices
 
 
@@ -63,7 +63,7 @@ class Coherence(Report):
         dups = (
             _get_devices_query()
             .values("serial")
-            .exclude(device_role__slug__in=DEVICE_ROLE_BLACKLIST)
+            .exclude(device_role__slug__in=DEVICE_ROLE_BLOCKLIST)
             .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
             .exclude(serial="")
             .exclude(serial__isnull=True)
@@ -90,7 +90,7 @@ class Coherence(Report):
         for device in (
             _get_devices_query()
             .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
-            .exclude(device_role__slug__in=DEVICE_ROLE_BLACKLIST)
+            .exclude(device_role__slug__in=DEVICE_ROLE_BLOCKLIST)
         ):
             if device.serial is None or device.serial == "":
                 self.log_failure(device, "missing serial number")

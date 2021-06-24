@@ -12,7 +12,7 @@ from dcim.models import Device
 from extras.reports import Report
 from virtualization.models import VirtualMachine
 
-VM_BLACKLIST = ('d-i-test',)
+VM_BLOCKLIST = ('d-i-test',)
 
 CONFIG_FILE = "/etc/netbox/reports.cfg"
 
@@ -78,8 +78,8 @@ class VirtualMachines(Report, PuppetDBDataMixin):
         success = 0
         for vm in vms:
             if vm.name not in puppetdb_isvirtual:
-                if vm.name in VM_BLACKLIST:
-                    self.log_warning(vm, "missing VM from PuppetDB (blacklisted)")
+                if vm.name in VM_BLOCKLIST:
+                    self.log_warning(vm, "missing VM from PuppetDB (ignored)")
                 else:
                     self.log_failure(vm, "missing VM from PuppetDB")
             elif not puppetdb_isvirtual[vm.name]:

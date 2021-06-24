@@ -1,7 +1,7 @@
 """
 Report on various cable, port, and termination related errors.
 
-BLACKLISTS:
+BLOCKLISTS:
   test_blank_cable_label: eqiad
 """
 
@@ -42,7 +42,7 @@ INTERFACES_REGEXP = (
     r"^##PRIMARY##$",  # interface name placeholder
 )
 
-BLANK_CABLES_SITE_BLACKLIST = ('eqiad', 'drmrs')
+BLANK_CABLES_SITE_BLOCKLIST = ('eqiad', 'drmrs')
 CORE_SITES = ('eqiad', 'codfw')
 
 interface_ct = ContentType.objects.get_for_model(Interface)
@@ -188,7 +188,7 @@ class Cables(Report):
                         and cable.termination_a.name.startswith('vcp-')):
                     self.log_warning(cable, "VC link with no cable ID (site {})".format(site))
                     continue
-                if site in BLANK_CABLES_SITE_BLACKLIST:
+                if site in BLANK_CABLES_SITE_BLOCKLIST:
                     self.log_warning(cable, "blank cable label (site {})".format(site))
                     continue
                 self.log_failure(cable, "blank cable label (site {})".format(site))

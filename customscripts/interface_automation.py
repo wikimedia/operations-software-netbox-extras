@@ -28,21 +28,21 @@ from virtualization.models import VirtualMachine, VMInterface
 CONFIGFILE = "/etc/netbox/reports.cfg"
 
 # Interfaces which we skip when importing
-INTERFACE_IMPORT_BLACKLIST_RE = (re.compile(r"^cali.*"),  # Kubernetes
+INTERFACE_IMPORT_BLOCKLIST_RE = (re.compile(r"^cali.*"),  # Kubernetes
                                  re.compile(r"^tap.*"),  # Ganeti & Openstack
                                  re.compile(r"^lo.*$"),)  # Loopback
 
 # PTRs that we skip when adding names to IPs
-IP_PTR_BLACKLIST_RE = tuple()
+IP_PTR_BLOCKLIST_RE = tuple()
 
 # Statuses that devices must be to import
-IMPORT_STATUS_WHITELIST = ("active",
+IMPORT_STATUS_ALLOWLIST = ("active",
                            "staged",
                            "failed",
                            "planned")
 
 # Prefix of neighbor interfaces names from LLDP to be considered
-SWITCH_INTERFACES_PREFIX_WHITELIST = ("xe-",
+SWITCH_INTERFACES_PREFIX_ALLOWLIST = ("xe-",
                                       "ge-")
 
 # Hostname regexes that are immune to VIP removal because of a bug in provisioning them
@@ -204,8 +204,8 @@ class Importer:
                 self.log_warning(f"{ipaddr}: skipping PTR assignment, DNS has more than 1 reverse record")
                 return
             potname = ptr[0]
-            if any(r.match(potname) for r in IP_PTR_BLACKLIST_RE):
-                self.log_warning(f"{ipaddr}: skipping PTR assignment, blacklisted name {potname}")
+            if any(r.match(potname) for r in IP_PTR_BLOCKLIST_RE):
+                self.log_warning(f"{ipaddr}: skipping PTR assignment, blocklisted name {potname}")
                 return
             if ipaddr.dns_name != potname:
                 self.log_success(f"{ipaddr}: assigning PTR {potname}")
@@ -559,8 +559,8 @@ class Importer:
         for iface, iface_dict in networking["interfaces"].items():
             is_vdev = ((":" in iface) or ("." in iface) or ("lo" == iface))
             is_anycast = (iface.startswith("lo:anycast"))
-            if any(r.match(iface) for r in INTERFACE_IMPORT_BLACKLIST_RE):
-                # don't create interfaces for blacklisted iface, but we still want to process
+            if any(r.match(iface) for r in INTERFACE_IMPORT_BLOCKLIST_RE):
+                # don't create interfaces for blocklisted iface, but we still want to process
                 # their IP addresses.
                 nbiface = None
             else:
@@ -613,7 +613,7 @@ class Importer:
                 # We want to filter some of the returned LLDP entries.
                 # For example on hosts like Ganeti, VMs show up as:
                 # {'neighbor': schema1003.eqiad.wmnet', 'descr': 'ens5', 'port': 'aa:00:00:88:83:8a'}
-                if not lldp[iface]['port'].startswith(SWITCH_INTERFACES_PREFIX_WHITELIST):
+                if not lldp[iface]['port'].startswith(SWITCH_INTERFACES_PREFIX_ALLOWLIST):
                     continue
                 # First we get or create the remote interface
                 z_nbiface = self._get_z_interface(lldp[iface])
@@ -644,10 +644,10 @@ class Importer:
 
     def _validate_device(self, device):
         """Check if device is OK for import."""
-        # Devices should be in the STATUS_WHITELIST to import
-        if device.status not in IMPORT_STATUS_WHITELIST:
+        # Devices should be in the STATUS_ALLOWLIST to import
+        if device.status not in IMPORT_STATUS_ALLOWLIST:
             self.log_failure(
-                f"{device} has an inappropriate status (must be one of {IMPORT_STATUS_WHITELIST}): {device.status}"
+                f"{device} has an inappropriate status (must be one of {IMPORT_STATUS_ALLOWLIST}): {device.status}"
             )
             return False
 
