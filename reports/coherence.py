@@ -124,7 +124,7 @@ class Coherence(Report):
                     warnings.append(device)
             elif (any(x in device.name for x in INVALID_ACTIVE_NAMES)
                   and device.status == DeviceStatusChoices.STATUS_ACTIVE):
-                self.log_failure(device, "Future or spare in active device name.")
+                self.log_failure(device, "Future or spare in active device name")
             else:
                 success += 1
 
@@ -143,7 +143,7 @@ class Coherence(Report):
                 success += 1
             else:
                 self.log_failure(inv, "malformed inventory description: {}".format(inv.description))
-        self.log_success(None, "{} correctly formatted inventory descriptions.".format(success))
+        self.log_success(None, "{} correctly formatted inventory descriptions".format(success))
 
 
 class Rack(Report):
