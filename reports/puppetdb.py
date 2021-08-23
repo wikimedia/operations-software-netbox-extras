@@ -168,7 +168,8 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             if device.name not in puppetdb_models:
                 continue
 
-            if device.device_type.model != puppetdb_models[device.name]:
+            # Split on ' - ' to remove the WMF standard configurations from the names (i.e. - ConfigA 202107)
+            if device.device_type.model.split(' - ')[0] != puppetdb_models[device.name]:
                 self.log_failure(
                     device,
                     "mismatched device models: {} (netbox) != {} (puppetdb)".format(
