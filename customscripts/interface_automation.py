@@ -1120,7 +1120,7 @@ class ProvisionServerNetwork(Script, Importer):
         query_params={
             "group": "production",
             "status": "active",
-            "name__nisw": [f"{i}1-" for i in VLAN_TYPES if i],
+            "name__nisw": [f"{vlan}{i}-" for vlan in VLAN_TYPES if vlan for i in (1, 2)],
         }
     )
 
@@ -1331,23 +1331,29 @@ class ProvisionServerNetwork(Script, Importer):
 
     def _get_vlan(self, vlan_type, device):
         """Find and return the appropriate VLAN that matches the type and device location."""
+        new_vlan_name = f"{vlan_type}1-{device.rack.name.lower()}-{device.site.slug}"
+
         if device.site.slug in ("eqiad", "codfw"):
             # TODO: add support for additional VLANs of a given type (e.g. private2)
             if vlan_type == 'cloud-hosts':
-                vlan_name = f"cloud-hosts1-{device.site.slug}"
+                old_vlan_name = f"cloud-hosts1-{device.site.slug}"
             else:
-                vlan_name = f"{vlan_type}1-{device.rack.group.slug.split('-')[-1]}-{device.site.slug}"
+                old_vlan_name = f"{vlan_type}1-{device.rack.group.slug.split('-')[-1]}-{device.site.slug}"
         else:
             if vlan_type not in VLAN_POP_TYPES:
                 self.log_failure(f"{device}: VLAN type {vlan_type} not available in site {device.site.slug}, skipping.")
                 return
 
-            vlan_name = f"{vlan_type}1-{device.site.slug}"
+            old_vlan_name = f"{vlan_type}1-{device.site.slug}"
 
         try:
-            return VLAN.objects.get(name=vlan_name, status="active")
+            return VLAN.objects.get(name=old_vlan_name, status="active")
         except ObjectDoesNotExist:
-            self.log_failure(f"{device}: unable to find VLAN with name {vlan_name}, skipping.")
+            try:
+                return VLAN.objects.get(name=new_vlan_name, status="active")
+            except ObjectDoesNotExist:
+                self.log_failure(
+                    f"{device}: unable to find VLAN with name {old_vlan_name} or {new_vlan_name}, skipping.")
 
     def _is_vlan_valid(self, vlan, device):
         """Try to ensure that the VLAN matches the device location."""
