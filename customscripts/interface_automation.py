@@ -42,7 +42,8 @@ IMPORT_STATUS_ALLOWLIST = ("active",
                            "planned")
 
 # Prefix of neighbor interfaces names from LLDP to be considered
-SWITCH_INTERFACES_PREFIX_ALLOWLIST = ("xe-",
+SWITCH_INTERFACES_PREFIX_ALLOWLIST = ("et-",
+                                      "xe-",
                                       "ge-")
 
 # Hostname regexes that are immune to VIP removal because of a bug in provisioning them
@@ -441,6 +442,8 @@ class Importer:
             iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED  # Default to 1G
             if z_iface.startswith('xe-'):  # 10G start with xe-
                 iface_fmt = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
+            elif z_iface.startswith('et-'):  # If a server is et- it's 25G
+                iface_fmt = InterfaceTypeChoices.TYPE_25GE_SFP28
 
             z_nbiface = Interface(name=z_iface,
                                   mgmt_only=False,
@@ -1206,6 +1209,8 @@ class ProvisionServerNetwork(Script, Importer):
         iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED  # Default to 1G
         if z_iface.startswith('xe-'):  # 10G start with xe-
             iface_fmt = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
+        elif z_iface.startswith('et-'):  # If a server is et- it's 25G
+            iface_fmt = InterfaceTypeChoices.TYPE_25GE_SFP28
 
         if device.tenant is not None and device.tenant.slug == FRACK_TENANT_SLUG:
             self.log_warning(f"{device}: Skipping Primary IP allocation with tenant {device.tenant}. "
