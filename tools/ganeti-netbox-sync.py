@@ -1,334 +1,316 @@
 #!/usr/bin/env python3
-"""
-ganeti-netbox-sync
-
-This script synchronizes ganeti Instance state with Netbox virtualization.virtual_hosts state, and
-assigns Netbox devices which match Ganeti nodes to Netbox's dcim.device.cluster.
-"""
-
+"""Synchronize Ganeti data to Netbox."""
 import argparse
-import json
 import logging
-import sys
 
 from collections import Counter
 from configparser import ConfigParser
+from dataclasses import dataclass, field as dataclass_field
+from pathlib import Path
+from typing import Callable, Counter as CounterType, Dict, List, Optional
 
-import pynetbox.api
+import pynetbox
 import requests
-from requests.auth import HTTPBasicAuth
+
+from wmflib.requests import http_session
 
 
 NO_PUPPETDB_VMS = ('d-i-test',)
 logger = logging.getLogger()
 
 
-def parse_command_line_args():
+def parse_command_line_args() -> argparse.Namespace:
     """Parse command line options."""
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("profile", help="The profile to use from the configuration file.")
-    parser.add_argument(
-        "-i",
-        "--instances-json",
-        help=(
-            "the path of a JSON file with the output of the Ganeti RAPI `instances&bulk=1` endpoint to process "
-            "instead of accessing the API directly."
-        ),
-    )
-    parser.add_argument(
-        "-n",
-        "--nodes-json",
-        help=(
-            "the path of a JSON file with the output of the Ganeti RAPI `nodes` endpoint to process instead of "
-            "accessing the API directly."
-        ),
-    )
-    parser.add_argument(
-        "-c", "--config", help="The path to the config file to load.", default="/etc/netbox/ganeti-sync.cfg"
-    )
-    parser.add_argument(
-        "-d", "--dry-run", help="Don't actually commit any changes, just do a dry-run", action="store_true"
-    )
-    parser.add_argument("-v", "--verbose", help="Output more verbosity.", action="store_true")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('profile', help='The profile to use from the configuration file.')
+    parser.add_argument('-c', '--config', default='/etc/netbox/ganeti-sync.cfg',
+                        help='The path to the config file to load.')
+    parser.add_argument('-d', '--dry-run', action='store_true',
+                        help="Don't actually commit any changes, just do a dry-run")
+    parser.add_argument('-v', '--verbose', help='Output more verbosity.', action='store_true')
 
     args = parser.parse_args()
 
-    # validation and manipulation
     if args.dry_run:
         args.verbose = True
 
     return args
 
 
-def setup_logging(verbose=False):
+def setup_logging(verbose: bool = False, dry_run: bool = False) -> None:
     """Setup the logging with a custom format to go to stdout."""
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=level)
-    logging.getLogger("requests").setLevel(logging.WARNING)  # Silence noisy logger
+    requests_level = logging.INFO if verbose else logging.WARNING
+    prefix = 'DRY-RUN ' if dry_run else ''
+    logging.basicConfig(format=f'%(asctime)s [%(levelname)s] {prefix}%(message)s', level=level)
+    logging.getLogger('requests').setLevel(requests_level)  # Silence noisy logger
 
 
-def ganeti_rapi_query(endpoint, base_url, user, password, ca_cert):
-    """Execute the GET verb on a specified Ganeti endpoint."""
-    target_url = "/".join((base_url.strip("/"), "2", endpoint))
-    r = requests.get(target_url, auth=HTTPBasicAuth(user, password), verify=ca_cert, timeout=30)
-    if r.status_code != 200:
-        raise Exception("Can't access Ganeti API {} {}".format(r.status_code, r.text))
-    return r.json()
+@dataclass
+class Ganeti:
+    """Class to fetch data from the Ganeti API to populate Netbox."""
 
+    url: str
+    port: str
+    username: str
+    password: str
+    ca_cert: str
+    http_session: requests.sessions.Session
 
-def ganeti_host_to_netbox(ganeti_dict, additional_fields):
-    """Takes a single entry from the Ganeti host list and returns just the fields pertinent to Netbox
-    along with any additional fields that need to be added"""
-    shortname = ganeti_dict["name"].split(".")[0]
-    output = {
-        "name": shortname,
-        "vcpus": ganeti_dict["beparams"]["vcpus"],
-        "memory": ganeti_dict["beparams"]["memory"],
-        "disk": round(sum(ganeti_dict["disk.sizes"]) / 1024, 0),  # ganeti gives megabytes, netbox expects gigabytes
-    }
-    # admin_state is the desired state of the machine, which maps nicely to the status field.
-    if ganeti_dict["admin_state"] == "up":
-        output["status"] = "active"
-    else:
-        output["status"] = "offline"
-    output.update(additional_fields)
-    return output
+    def _query(self, endpoint: str) -> Dict:
+        """GET the provided endpoint from the Ganeti API."""
+        response = self.http_session.get(
+            f'https://{self.url}:{self.port}/2/{endpoint}',
+            auth=requests.auth.HTTPBasicAuth(self.username, self.password),
+            verify=self.ca_cert)
 
+        if response.status_code != requests.codes.ok:
+            raise RuntimeError(f'Ganeti API call to {endpoint} failed with {response.status_code}:\n{response.text}')
 
-def sync_ganeti_netbox_host_diff(ganeti_host, netbox_host):
-    """Update fields on netbox_host from ganeti_dict, return True if updates are made."""
-    updated = False
-    if netbox_host.vcpus != ganeti_host["vcpus"]:
-        logger.debug("updating vcpus on %s %d -> %d", netbox_host.name, netbox_host.vcpus, ganeti_host["vcpus"])
-        netbox_host.vcpus = ganeti_host["vcpus"]
-        updated = True
-    if netbox_host.memory != ganeti_host["memory"]:
-        logger.debug("updating memory on %s %d -> %d", netbox_host.name, netbox_host.memory, ganeti_host["memory"])
-        netbox_host.memory = ganeti_host["memory"]
-        updated = True
-    if netbox_host.disk != ganeti_host["disk"]:
-        logger.debug("updating disk on %s %d -> %d", netbox_host.name, netbox_host.disk, ganeti_host["disk"])
-        netbox_host.disk = ganeti_host["disk"]
-        updated = True
-    if netbox_host.status.value != ganeti_host["status"]:
-        logger.debug(
-            "updating status on %s %d -> %d", netbox_host.name, netbox_host.status.value, ganeti_host["status"]
-        )
-        netbox_host.status = ganeti_host["status"]
-        updated = True
+        return response.json()
 
-    return updated
-
-
-def sync_ganeti_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_hosts, dryrun):
-    """Preform a sync from the Ganeti host list into the specified Netbox API destination."""
-    nbapi = pynetbox.api(netbox_api, token=netbox_token)
-
-    nb_linux_id = nbapi.dcim.platforms.get(slug="linux").id
-    nb_cluster_id = nbapi.virtualization.clusters.get(name=cluster_name).id
-    nb_server_id = nbapi.dcim.device_roles.get(slug="server").id
-
-    nb_vhosts = {}
-    # make a convenient dictionary of netbox hosts
-    for host in nbapi.virtualization.virtual_machines.filter(cluster=nb_cluster_id):
-        nb_vhosts[host.name] = host
-
-    results = Counter()
-    for nb_host_name, nb_host in nb_vhosts.items():
-        if nb_host_name not in ganeti_hosts:
-            if not dryrun:
-                nb_host.delete()
-            logger.debug("removed %s from netbox", nb_host_name)
-            results["del"] += 1
-        else:
+    def get_instances(self) -> Dict:
+        """Return the instances of the current cluster."""
+        instances = {}
+        for instance in self._query('instances?bulk=1'):
             try:
-                ganeti_host = ganeti_host_to_netbox(ganeti_hosts[nb_host_name], {})
+                name = instance['name'].split('.', 1)[0]
+                instances[name] = {
+                    'name': name,
+                    'vcpus': instance['beparams']['vcpus'],
+                    'memory': instance['beparams']['memory'],
+                    'disk': round(sum(instance['disk.sizes']) / 1024, 0),  # Ganeti returns MB, Netbox expects GB
+                    'status': 'active' if instance['admin_state'] == 'up' else 'offline',
+                }
             except (KeyError, TypeError) as e:
-                logger.error(
-                    "Host %s raised an exception when trying to convert to Netbox for syncing: %s", nb_host_name, e
-                )
+                logger.error('Failed to get data for Ganeti instance %s: %s', name, e)
                 continue
 
-            try:
-                diff_result = sync_ganeti_netbox_host_diff(ganeti_host, nb_host)
-            except KeyError as e:
-                logger.error("Host %s raised an exception when trying to resolve diff: %s", nb_host_name, e)
-                continue
-            if diff_result:
-                logger.debug("updating %s in netbox", nb_host_name)
-                if not dryrun:
-                    nb_host.save()
-                results["update"] += 1
+        logger.debug('Loaded %d Ganeti instances in cluster %s', len(instances), self.url)
+        return instances
 
-    logger.info("removed %s instances from netbox", results["del"])
-    logger.info("updated %s instances from netbox", results["update"])
+    def get_nodes(self) -> List:
+        """Return the nodes of the current cluster."""
+        nodes = [node['id'].split('.', 1)[0] for node in self._query('nodes')]
+        logger.debug('Loaded %d Ganeti nodes in cluster %s', len(nodes), self.url)
+        return nodes
 
-    for ganeti_host_name, ganeti_host in ganeti_hosts.items():
-        if ganeti_host_name in nb_vhosts:
-            continue
+
+@dataclass
+class NetboxCluster:
+    """Class to manage Netbox clusters."""
+
+    url: str
+    token: str
+    cluster: str
+    http_session: requests.sessions.Session
+    dry_run: bool
+
+    def __post_init__(self) -> None:
+        """Initialize additional instance variables."""
+        self._api = pynetbox.api(self.url, token=self.token)
+        self.linux_id = self._api.dcim.platforms.get(slug='linux').id
+        self.cluster_id = self._api.virtualization.clusters.get(name=self.cluster).id
+        self.server_id = self._api.dcim.device_roles.get(slug='server').id
+
+    def _create_resource(self, resource: str, func: Callable, data: Dict) -> bool:
+        """Create a resource, dry-run aware. Returns True if successfully created."""
+        name = data['name']
+        logger.info('Creating %s %s with data: %s', resource, name, data)
+        if self.dry_run:
+            return True
 
         try:
-            ganeti_host_dict = ganeti_host_to_netbox(
-                ganeti_host,
-                {"cluster": nb_cluster_id, "platform": nb_linux_id, "role": nb_server_id},
-            )
-        except (KeyError, TypeError) as e:
-            logger.error(
-                "Host %s raised an exception when trying to convert to Netbox for adding: %s", ganeti_host_name, e
-            )
-            continue
-        if dryrun:
-            save_result = True
+            created = func(data)
+        except pynetbox.RequestError as e:
+            logger.error('Failed to create %s %s in Netbox: %s', resource, name, e)
+            created = False
+
+        return created
+
+    def puppetdb_import(self) -> None:
+        """Execute PuppetDB import on any host that have the placeholder PRIMARY interface."""
+        reimport = [str(iface.virtual_machine) for iface in
+                    self._api.virtualization.interfaces.filter(name='##PRIMARY##', cluster=self.cluster)
+                    if iface.virtual_machine.name not in NO_PUPPETDB_VMS]
+        if not reimport:
+            return
+
+        logger.info('Running PuppetDB import script for %d VMs.', len(reimport))
+        url = f'{self.url}api/extras/scripts/interface_automation.ImportPuppetDB/'
+        headers = {'Authorization': f'Token {self.token}'}
+        data = {'data': {'device': ' '.join(reimport)}, 'commit': not self.dry_run}
+        result = self.http_session.post(url, headers=headers, json=data)
+        if result.status_code == 200:
+            logger.debug('Executed import, result: %s', result.text)
         else:
-            try:
-                save_result = nbapi.virtualization.virtual_machines.create(ganeti_host_dict)
-            except pynetbox.RequestError as e:
-                logger.error("Host %s raised an exception when trying to create in Netbox: %s", ganeti_host_name, e)
-                continue
+            logger.error('Error executing PuppetDB import: %s', result.text)
 
-        if save_result:
-            results["add"] += 1
-            logger.debug("adding %s to netbox", ganeti_host_dict["name"])
-        else:
-            logger.error("error added %s to netbox", ganeti_host_dict["name"])
-    logger.info("added %s instances to netbox", results["add"])
+    def get_vms(self) -> Dict:
+        """Return all the VMs for the current cluster."""
+        vms = {vm.name: vm for vm in self._api.virtualization.virtual_machines.filter(cluster=self.cluster_id)}
+        logger.debug('Loaded %d Netbox VMs in cluster %s', len(vms), self.cluster)
+        return vms
+
+    def get_devices(self) -> Dict:
+        """Return all the physical devices that are part of the current cluster."""
+        devices = {device.name: device for device in self._api.dcim.devices.filter(cluster_id=self.cluster_id)}
+        logger.debug('Loaded %d Netbox devices in cluster %s', len(devices), self.cluster)
+        return devices
+
+    def create_vm(self, data: Dict) -> bool:
+        """Create a VM with the given data and return a boolean that tells if it was created successfully."""
+        data.update({'cluster': self.cluster_id, 'platform': self.linux_id, 'role': self.server_id})
+        return self._create_resource('VM', self._api.virtualization.virtual_machines.create, data)
+
+    def _set_device_cluster(self, device_name: str, cluster_id: Optional[int]) -> bool:
+        """Update a device setting the cluster ID."""
+        try:
+            device = self._api.dcim.devices.get(name=device_name)
+        except pynetbox.RequestError as e:
+            logger.error('Unable to load device %s on Netbox: %s', device, e)
+            return False
+
+        logger.info('Setting cluster ID to %s for device %s', cluster_id, device)
+        if self.dry_run:
+            return True
+
+        try:
+            device.cluster = cluster_id
+            device.save()
+            return True
+        except pynetbox.RequestError as e:
+            logger.error('Failed to save Netbox device %s: %s', device, e)
+            return False
+
+    def add_device(self, device: str) -> bool:
+        """Add a physical device to the current cluster."""
+        return self._set_device_cluster(device, self.cluster_id)
+
+    def remove_device(self, device: str) -> bool:
+        """Remove a physical device from the current cluster."""
+        return self._set_device_cluster(device, None)
 
 
-def sync_ganeti_nodes_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_nodes, dry_run):
-    """Perform a sync between the Ganeti Node list and the Netbox API"""
-    nbapi = pynetbox.api(netbox_api, token=netbox_token)
-    nb_cluster_id = nbapi.virtualization.clusters.get(name=cluster_name).id
+@dataclass
+class GanetiNetboxSyncer:
+    """Class to perform the sync from Ganeti to Netbox."""
 
-    nb_cluster_nodes = {n.name: n for n in nbapi.dcim.devices.filter(cluster_id=nb_cluster_id)}
-    results = Counter()
-    for node in ganeti_nodes:
-        if node not in nb_cluster_nodes.keys():
-            try:
-                device = nbapi.dcim.devices.get(name=node)
-            except pynetbox.RequestError as e:
-                logger.error("an error was raised trying to retrieve host %s: %s", node, e)
-                continue
+    netbox: NetboxCluster
+    ganeti: Ganeti
+    dry_run: bool
+    actions: CounterType = dataclass_field(default_factory=Counter)
 
-            if device is not None:
-                device.cluster = nb_cluster_id
-                if dry_run:
-                    save_result = True
-                else:
-                    try:
-                        save_result = device.save()
-                    except pynetbox.RequestError as e:
-                        logger.error("an error was raised trying to save host %s: %s", node, e)
-                        continue
-
-                if save_result:
-                    results["assign"] += 1
-                    logger.debug("assigned %s to %s", node, cluster_name)
-                else:
-                    logger.error("error assigning %s to %s", node, cluster_name)
+    def sync_vms(self) -> None:
+        """Sync Ganeti VMs to Netbox."""
+        ganeti_instances = self.ganeti.get_instances()
+        netbox_vms = self.netbox.get_vms()
+        for netbox_vm_hostname, netbox_vm in netbox_vms.items():
+            if netbox_vm_hostname not in ganeti_instances:
+                logger.debug('Deleting VM %s from netbox', netbox_vm_hostname)
+                if not self.dry_run:
+                    netbox_vm.delete()
+                self.actions['VMs deleted'] += 1
             else:
-                logger.error("device %s does not exist in netbox to assign to cluster %s", node, cluster_name)
+                try:
+                    diff_result = self.vm_diff(ganeti_instances[netbox_vm_hostname], netbox_vm)
+                except KeyError as e:
+                    logger.error('Failed to compare VM %s between Ganeti and Netbox: %s', netbox_vm_hostname, e)
+                    continue
+                if diff_result:
+                    logger.debug('Updating VM %s in Netbox', netbox_vm_hostname)
+                    if not self.dry_run:
+                        netbox_vm.save()
+                    self.actions['VMs updated'] += 1
 
-    logger.info("assigned %d hosts to cluster %s", results["assign"], cluster_name)
-
-    removals = set(nb_cluster_nodes.keys()) - set(ganeti_nodes)
-    for node in removals:
-        device = nb_cluster_nodes[node]
-        device.cluster = None
-        if dry_run:
-            save_result = True
-        else:
-            try:
-                save_result = device.save()
-            except pynetbox.RequestError as e:
-                logger.error("an error was raised trying to save host %s: %s", node, e)
+        for ganeti_instance_hostname, ganeti_instance in ganeti_instances.items():
+            if ganeti_instance_hostname in netbox_vm_hostname:
                 continue
-        if save_result:
-            results["remove"] += 1
-            logger.debug("removed %s from %s", node, cluster_name)
-        else:
-            logger.error("error removing %s from %s", node, cluster_name)
 
-    logger.info("removed %d hosts from cluster %s", results["remove"], cluster_name)
+            created = self.netbox.create_vm(ganeti_instance)
+            if created:
+                self.actions['VMs added'] += 1
+            else:
+                self.actions['VMs failed'] += 1
+
+    def sync_nodes(self) -> None:
+        """Sync Ganeti nodes to Netbox to be member of the cluster devices."""
+        ganeti_nodes = self.ganeti.get_nodes()
+        netbox_devices = self.netbox.get_devices()
+
+        for node in ganeti_nodes:
+            if node in netbox_devices:
+                continue
+
+            created = self.netbox.add_device(node)
+            if created:
+                self.actions['Nodes added'] += 1
+            else:
+                self.actions['Nodes failed'] += 1
+
+        for name, device in netbox_devices.items():
+            if name in ganeti_nodes:
+                continue
+
+            deleted = self.netbox.remove_device(name)
+            if deleted:
+                self.actions['Nodes removed'] += 1
+            else:
+                self.actions['Nodes failed'] += 1
+
+    def vm_diff(self, ganeti_instance: Dict, netbox_vm: pynetbox.models.virtualization.VirtualMachines) -> bool:
+        """Update fields on netbox_vm from ganeti_instance, return True if updates are made."""
+        updated = False
+        for field in ('vcpus', 'memory', 'disk'):
+            curr = getattr(netbox_vm, field)
+            new = ganeti_instance[field]
+            if curr != new:
+                logger.debug('Updating %s on %s %d -> %d', field, netbox_vm.name, curr, new)
+                setattr(netbox_vm, field, new)
+                updated = True
+
+        if netbox_vm.status.value != ganeti_instance['status']:
+            logger.debug(
+                'Updating status on %s %d -> %d', netbox_vm.name, netbox_vm.status.value, ganeti_instance['status'])
+            netbox_vm.status = ganeti_instance['status']
+            updated = True
+
+        return updated
 
 
-def run_import_script(netbox_api, netbox_token, imports, dry_run):
-    """Execute the PuppetDB import script for a given list of hosts."""
-    api_url = '{}api/extras/scripts/{}/'.format(netbox_api, 'interface_automation.ImportPuppetDB')
-    headers = {'Authorization': 'Token {}'.format(netbox_token)}
-    data = {"data": {"device": " ".join(imports)}, "commit": not dry_run}
-    result = requests.post(api_url, headers=headers, json=data)
-    if result.status_code == 200:
-        logger.debug("Executed import, result: %s", str(result.content))
-    else:
-        logger.error("Error executing import. Data: %s", str(result.content))
-
-
-def nb_fix_ganeti_interfaces(netbox_api, netbox_token, netbox_cluster, dry_run):
-    """Execute PuppetDB import on any host in a list of hosts with a placeholder Interface."""
-    nbapi = pynetbox.api(netbox_api, token=netbox_token)
-    reimport = [str(x.virtual_machine) for x in
-                nbapi.virtualization.interfaces.filter(name='##PRIMARY##', cluster=netbox_cluster)
-                if x.virtual_machine.name not in NO_PUPPETDB_VMS]
-    if reimport:
-        logger.info("Will import interfaces for {} instances.".format(len(reimport)))
-        run_import_script(netbox_api, netbox_token, reimport, dry_run)
-
-
-def main():
+def main() -> None:
     """Entry point for Ganeti->Netbox Sync."""
     args = parse_command_line_args()
-    setup_logging(args.verbose)
+    setup_logging(args.verbose, args.dry_run)
+    session = http_session(Path(__file__).name)
 
-    # Load configuration
     cfg = ConfigParser()
     cfg.read(args.config)
-    logger.info("loaded %s configuration", args.config)
-    netbox_token = cfg["auth"]["netbox_token"]
-    ganeti_user = cfg["auth"]["ganeti_user"]
-    ganeti_password = cfg["auth"]["ganeti_password"]
-    netbox_api = cfg["netbox"]["api"]
-    netbox_cluster = cfg["profile:" + args.profile]["cluster"]
-    ganeti_api = cfg["profile:" + args.profile]["api"]
-    ganeti_ca_cert = cfg["auth"]["ca_cert"]
+    logger.info('Loaded %s configuration', args.config)
 
-    logger.debug("using ganeti api at %s", ganeti_api)
-    logger.debug("using netbox api at %s", netbox_api)
+    profile_config = cfg[f'profile:{args.profile}']
+    ganeti = Ganeti(
+        url=profile_config['url'],
+        port=profile_config['port'],
+        username=cfg['auth']['ganeti_user'],
+        password=cfg['auth']['ganeti_password'],
+        ca_cert=cfg['auth']['ca_cert'],
+        http_session=session,
+    )
+    netbox = NetboxCluster(
+        url=cfg['netbox']['api'],
+        token=cfg['auth']['netbox_token'],
+        cluster=args.profile,
+        http_session=session,
+        dry_run=args.dry_run,
+    )
 
-    if args.dry_run:
-        logger.info("*** DRY RUN ***")
-
-    # Sync Hosts
-    if args.instances_json:
-        logger.info("note: loading json file rather than accessing ganeti api %s", args.instances_json)
-        with open(args.instances_json, "r") as in_json:
-            ganeti_hosts_json = json.load(in_json)
-    else:
-        ganeti_hosts_json = ganeti_rapi_query(
-            "instances?bulk=1", ganeti_api, ganeti_user, ganeti_password, ganeti_ca_cert
-        )
-
-    # Convert instances JSON to a dict keyed by the host name
-    ganeti_hosts = {i["name"].split(".")[0]: i for i in ganeti_hosts_json}
-    logger.debug("loaded %d instances from ganeti api", len(ganeti_hosts))
-    sync_ganeti_to_netbox(netbox_api, netbox_token, netbox_cluster, ganeti_hosts, args.dry_run)
-
-    # Sync Nodes
-    if args.nodes_json:
-        logger.info("note: loading json file rather than accessing ganeti api %s", args.nodes_json)
-        with open(args.nodes_json, "r") as in_json:
-            ganeti_nodes_json = json.load(in_json)
-    else:
-        ganeti_nodes_json = ganeti_rapi_query("nodes", ganeti_api, ganeti_user, ganeti_password, ganeti_ca_cert)
-
-    # Convert nodes JSON to a list of nodes that run this cluster
-    ganeti_nodes = [x["id"].split(".", 1)[0] for x in ganeti_nodes_json]
-    logger.debug("loaded %d nodes from ganeti api", len(ganeti_nodes))
-    sync_ganeti_nodes_to_netbox(netbox_api, netbox_token, netbox_cluster, ganeti_nodes, args.dry_run)
-    nb_fix_ganeti_interfaces(netbox_api, netbox_token, netbox_cluster, args.dry_run)
-
-    return 0
+    syncer = GanetiNetboxSyncer(netbox, ganeti, dry_run=args.dry_run)
+    syncer.sync_nodes()
+    syncer.sync_vms()
+    netbox.puppetdb_import()
+    logger.info('Summary of performed actions: %s', syncer.actions)
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+if __name__ == '__main__':
+    main()
