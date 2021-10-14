@@ -1376,18 +1376,21 @@ class ProvisionServerNetwork(Script, Importer):
             )
             return False
 
-        # Attempt to validate the row
-        row = device.rack.group.slug.split("-")[-1]
-        possible_rows = [part for part in vlan.name.split("-") if len(part) == 1]
-        if len(possible_rows) == 1:
-            if row != possible_rows[0]:
-                self.log_failure(
-                    f"{device}: mismatch row for VLAN {vlan.name}: "
-                    f"{row} (device) != {possible_rows[0]} (VLAN), skipping."
-                )
-                return False
-        else:
-            self.log_warning(f"{device} unable to verify if VLAN {vlan.name} matches row {row} of device.")
+        # Attempt to validate the row for old vlan names, for the new names the vlans are per-row
+        devices = {i.device for i in vlan.get_interfaces()}
+        if not devices:  # This is the first device of a new VLAN, can't validate it
+            return True
+
+        racks = {dev.rack for dev in devices}
+        rack_groups = {rack.group for rack in racks}
+        if device.rack.group not in rack_groups:
+            self.log_failure(f"{device} is in row {device.rack.group} but VLAN {vlan.name} is present only in "
+                             f"{rack_groups}. Skipping device because of invalid VLAN.")
+            return False
+
+        if device.rack not in racks:
+            self.log_warning(f"{device} is the first device in rack {device.rack} to be added to VLAN {vlan.name}, "
+                             f"unable to automatically verify if that's correct, please double check.")
 
         return True
 
