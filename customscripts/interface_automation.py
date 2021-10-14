@@ -671,7 +671,7 @@ class Importer:
             color = ColorChoices.COLOR_BLUE
             color_human = ColorChoices.as_dict()[color]
             cable_type = CableTypeChoices.TYPE_CAT5E
-        elif nbiface.type == InterfaceTypeChoices.TYPE_10GE_SFP_PLUS:
+        elif nbiface.type == (InterfaceTypeChoices.TYPE_10GE_SFP_PLUS or InterfaceTypeChoices.TYPE_25GE_SFP28):
             color = ColorChoices.COLOR_BLACK
             color_human = ColorChoices.as_dict()[color]
             cable_type = CableTypeChoices.TYPE_DAC_PASSIVE
