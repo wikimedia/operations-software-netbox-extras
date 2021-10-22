@@ -470,8 +470,11 @@ class Records:
             matching_prefixes = [prefix for prefix in self.netbox.prefixes
                                  if ipaddress.ip_interface(address.address).ip in prefix]
             if matching_prefixes:
-                prefix_key = min(matching_prefixes, key=attrgetter('prefixlen'))
-                if self.netbox.prefixes[prefix_key].site:
+                prefix_key = max(
+                    [prefix for prefix in matching_prefixes if self.netbox.prefixes[prefix].site],
+                    key=attrgetter('prefixlen')
+                )
+                if prefix_key:
                     suffix = self.netbox.prefixes[prefix_key].site.slug
                 else:
                     logger.debug('Failed to find DC for address %s, prefix %s, using global', address, prefix_key)
