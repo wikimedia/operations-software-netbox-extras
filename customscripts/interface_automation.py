@@ -7,9 +7,6 @@ import json
 
 import requests
 
-from dns import resolver, reversename
-from dns.exception import DNSException
-
 from string import ascii_lowercase
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -107,118 +104,9 @@ class Importer:
 
         return length
 
-    def _resolve_address(self, qname, rrtype):
-        """Perform a DNS resolution on an A or AAAA record.
-
-        Returns empty list on no results.
-        """
-        results = []
-        try:
-            result = resolver.query(qname, rrtype)
-            for res in result.rrset:
-                results.append(res.address)
-        except (resolver.NoAnswer, resolver.NXDOMAIN):
-            self.log_debug(f"[DNS] Record {rrtype} not found for {qname}")
-        except DNSException:
-            self.log_debug(f"[DNS] Cannot resolve {rrtype} for {qname}")
-        return results
-
-    def _resolve_ipv6(self, dnsname):
-        return self._resolve_address(dnsname, "AAAA")
-
-    def _resolve_ipv4(self, dnsname):
-        return self._resolve_address(dnsname, "A")
-
-    def _resolve_ptr(self, ipaddr):
-        """Perform a DNS PTR resolution.
-
-        Returns empty None if there is no result."""
-        try:
-            result = resolver.query(reversename.from_address(ipaddr), "PTR")
-            results = [r.target.to_text().strip(".") for r in result.rrset]
-            return results
-        except (resolver.NoAnswer, resolver.NXDOMAIN):
-            self.log_debug(f"[DNS] PTR record not found for {ipaddr}")
-        except DNSException as e:
-            self.log_debug(f"[DNS] PTR cannot resolve {ipaddr}: exception {e}")
-        return []
-
-    def _assign_name(self, ipaddr, networking, is_ipv6):
-        """Possibly assign name to address if the conditions are right. Otherwise,
-           return a message array explaining why we didn't."""
-
-        # leave it alone if it's already assigned to the right name
-        if (ipaddr.dns_name == networking["fqdn"]):
-            self.log_info(f"{networking['fqdn']} assign_name: {ipaddr.address} already has correct DNS name.")
-            return []
-
-        # leave it alone if it's assigned another name, but warn as this requires human intervention
-        if (ipaddr.dns_name):
-            self.log_failure((f"{networking['fqdn']} assign_name: {ipaddr.address} has a different DNS name than"
-                              f"expected: {ipaddr.dns_name}"))
-            return []
-
-        # consider ipaddress for DNS name
-        # FIXME: Note that the DNS logic is transition period
-        # temporary to shake out any unassigned IP addresses and similar.
-        output = []
-        nogo = True
-        ptr = self._resolve_ptr(str(ipaddress.ip_interface(ipaddr.address).ip))
-        if (is_ipv6):
-            ipv6 = self._resolve_ipv6(networking["fqdn"])
-            if (not ipv6) and (not ptr):
-                self.log_warning(f"{networking['fqdn']} assign_name: No IPv6 DNS records.")
-                output.append(f"{networking['fqdn']} assign_name: No IPv6 DNS records.")
-            elif (not ipv6):
-                self.log_warning(f"{networking['fqdn']} assign_name: No IPv6 AAAA records.")
-                output.append(f"{networking['fqdn']} assign_name: No IPv6 AAAA records.")
-            elif (not ptr):
-                self.log_warning(f"{networking['fqdn']} assign_name: No IPv6 PTR record.")
-                output.append(f"{networking['fqdn']} assign_name: No IPv6 PTR record.")
-            else:
-                nogo = False
-        else:
-            ipv4 = self._resolve_ipv4(networking["fqdn"])
-            if (not ipv4) and (not ptr):
-                self.log_warning(f"{networking['fqdn']} assign_name: No IPv4 DNS records.")
-                output.append(f"{networking['fqdn']} assign_name: No IPv4 DNS records.")
-            elif (not ipv4):
-                self.log_warning(f"{networking['fqdn']} assign_name: No IPv4 A records.")
-                output.append(f"{networking['fqdn']} assign_name: No IPv4 A records.")
-            elif (not ptr):
-                self.log_warning(f"{networking['fqdn']} assign_name: No IPv4 PTR record.")
-                output.append(f"{networking['fqdn']} assign_name: No IPv4 PTR record.")
-            else:
-                nogo = False
-
-        if not nogo:
-            self.log_info(f"Adding FQDN {networking['fqdn']} to {ipaddr}")
-            ipaddr.dns_name = networking["fqdn"]
-
-        return output
-
-    def _assign_rdns(self, ipaddr):
-        ptr = self._resolve_ptr(str(ipaddress.ip_interface(ipaddr.address).ip))
-
-        if ptr:
-            if (len(ptr) > 1):
-                self.log_warning(f"{ipaddr}: skipping PTR assignment, DNS has more than 1 reverse record")
-                return
-            potname = ptr[0]
-            if any(r.match(potname) for r in IP_PTR_BLOCKLIST_RE):
-                self.log_warning(f"{ipaddr}: skipping PTR assignment, blocklisted name {potname}")
-                return
-            if ipaddr.dns_name != potname:
-                self.log_success(f"{ipaddr}: assigning PTR {potname}")
-                ipaddr.dns_name = potname
-                ipaddr.save()
-            else:
-                self.log_debug(f"{ipaddr}: already have PTR {potname}")
-
     def _assign_ip_to_interface(self, address, nbiface, networking, iface, is_primary, is_ipv6):
         """Perform the minor complexity of assigning an IP address to an interface as specified by
            a PuppetDB interface fact."""
-        output = []
         ipaddr_changed = False
         newdev_changed = False
         # heuristically determine if this is probably anycast
@@ -240,7 +128,6 @@ class Importer:
         if ipaddr.role in IPADDRESS_ROLES_NONUNIQUE:
             self.log_warning(f"Skipping assigning existing IP {address} with role {ipaddr.role} to {iface}. "
                              f"The IP might have the wrong netmask (expected /32 or /128 for VIP-like IPs)")
-            return output
 
         oldiface = ipaddr.assigned_object
         if oldiface:
@@ -293,7 +180,12 @@ class Importer:
 
         if is_primary:
             # Try assigning DNS name and getting information about DNS.
-            output = self._assign_name(ipaddr, networking, is_ipv6)
+            if ipaddr.dns_name == networking["fqdn"]:
+                self.log_info(f"{networking['fqdn']} assign_name: {ipaddr.address} already has correct DNS name.")
+            elif ipaddr.dns_name:
+                self.log_failure((f"{networking['fqdn']} assign_name: {ipaddr.address} has a different DNS name than"
+                                  f"expected: {ipaddr.dns_name}"))
+
             if is_ipv6 and (newdev.primary_ip6 != ipaddr):
                 ipaddr.is_primary = True
                 ipaddr_changed = True
@@ -309,16 +201,11 @@ class Importer:
             else:
                 self.log_info(f"{ipaddr} is already primary for {newdev}")
 
-        else:
-            # FIXME this is transitional and should be removed after dns is generated
-            self._assign_rdns(ipaddr)
-
         if newdev_changed:
             newdev.save()
 
         if ipaddr_changed:
             ipaddr.save()
-        return output
 
     def _process_binding_address(self, binding, is_ipv6, is_anycast, vip_exempt):
         """Convert a binding to an ipaddress.ip_interface object.
@@ -398,7 +285,6 @@ class Importer:
                                assigned_object=None, role=role,
                                status='active')
             ipaddr.save()
-        self._assign_rdns(ipaddr)
 
     def _get_vc_member(self, neighbor, interface):
         """Return a Netbox VC member device based on a hostname and an interface."""
@@ -590,12 +476,7 @@ class Importer:
                 if address in ipaddress.IPv4Network('192.168.0.0/16'):  # non-routed network, ignore it
                     continue
                 is_primary = (iface == networking['primary'] and str(address.ip) == networking['ip'])
-                output = output + self._assign_ip_to_interface(address,
-                                                               nbiface,
-                                                               networking,
-                                                               iface,
-                                                               is_primary,
-                                                               False)
+                self._assign_ip_to_interface(address, nbiface, networking, iface, is_primary, False)
             # process ipv6 addresses
             for binding in iface_dict.get('bindings6', []):
                 address = self._process_binding_address(binding, True, is_anycast, (vipexempt and not is_vdev))
@@ -604,12 +485,7 @@ class Importer:
                 # the primary ipv6 address is currently a mapped ipv6 address so it should end with networking['ip']
                 is_primary = (iface == networking['primary']
                               and str(address.ip).endswith(networking['ip'].replace('.', ':')))
-                output = output + self._assign_ip_to_interface(address,
-                                                               nbiface,
-                                                               networking,
-                                                               iface,
-                                                               is_primary,
-                                                               True)
+                self._assign_ip_to_interface(address, nbiface, networking, iface, is_primary, True)
             # Now that we have tackled the interfaces and their IPs, it's time for the cables and vlan using LLDP
             # If neighbor + port set, find the real switch (either standalone or VC member)
             if iface in lldp and 'neighbor' in lldp[iface] and 'port' in lldp[iface]:
