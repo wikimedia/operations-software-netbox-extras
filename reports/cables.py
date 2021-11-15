@@ -29,7 +29,7 @@ EXCLUDE_STATUSES = (
 INTERFACES_REGEXP = (
     r"^mgmt\d?$|^ILO$|^i?DRAC$",  # managment interfaces
     r"^fxp\d-re\d$",  # routing engine management interfaces
-    r"^[a-z]+-\d+/\d+/\d+(\.\d+){0,1}$",  # Juniper interfaces eg et-0/0/0
+    r"^[a-z]+-\d+/\d+/\d+(:\d+){0,1}(\.\d+){0,1}$",  # Juniper interfaces eg et-0/0/0:0.0
     r"^[a-z]{1,4}(\d+){0,1}(\.\d+){0,1}$",  # typical device names (eg eth0) and vlan.900 etc.
     r"^en(p\d+)?s\d+(f\d+)?((d|np)\d+)?$",  # systemd 'path' devices
     r"^cali[a-f0-9]+",  # kubernetes calico interfaces
