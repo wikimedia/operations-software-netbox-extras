@@ -512,7 +512,8 @@ class Importer:
                 device_iface_ct = ContentType.objects.get_for_model(device_interface)
                 ipcount = IPAddress.objects.filter(assigned_object_id=device_interface.id,
                                                    assigned_object_type=device_iface_ct).count()
-                if (ipcount == 0) and (device_interface.cable is None):
+                if ipcount == 0 and ((hasattr(device_interface, 'cable') and device_interface.cable is None)
+                                     or hasattr(device_interface, 'virtual_machine')):
                     self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}")
                     device_interface.delete()
                 else:
