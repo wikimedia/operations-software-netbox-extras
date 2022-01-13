@@ -30,25 +30,7 @@ EXCLUDE_SITES = ()
 # Query filters for excluding certain models that don't seem to report correctly to LibreNMS
 # or are unmanaged.
 MODEL_EXCLUDES = (
-    Q(device_type__manufacturer__slug="netgear", device_role__slug="msw")
-    | Q(device_type__manufacturer__slug="dell", device_type__slug="powerconnect-2748")
-    | Q(device_type__manufacturer__slug="sj-manufacturing", device_type__slug="thrupower")
-    | Q(
-        device_type__manufacturer__slug="sentry",
-        device_type__slug__in=(
-            "smart-cdu",  # Legacy generic model name
-            "switched-cdu",  # Legacy generic model name
-            "cl-42vyme15",  # Smart Pips Link V42 - secondary device
-            "cx-24vy-l30m",  # Switched CDU Expansion Unit - secondary device
-            "cx-24vym311a1",  # Switched CDU Expansion Unit - secondary device
-            "c2l42ce-ycmfam00",  # Smart Link PRO2 (42) - secondary device
-            "c2l36te-ycmfam99",  # Smart Link PRO2 (36) - secondary device
-            "c2x42ce-2caf2m00",  # Switched Expansion PRO2 - secondary device
-            "c2x36te-epaf2m99",  # PRO2 Switched link - secondary device
-            "c2l54ce-ycmfam90",  # Smart Link PRO2 (54) - secondary device
-        ),
-    )
-    | Q(device_type__manufacturer__slug="eaton")  # Doesn't report its vendor in  LibreNMS description/hardware
+    Q(device_type__manufacturer__slug="eaton")  # Doesn't report its vendor in  LibreNMS description/hardware
 )
 
 INVENTORY_EXCLUDES = Q(name="FPM Board")
@@ -170,8 +152,12 @@ class LibreNMS(Report):
                 and (dev.serial in self.librenms.inventory)
             ):
                 success += 1
+
             elif dev.site.slug not in EXCLUDE_SITES:
-                self.log_failure(dev, "missing Netbox device from LibreNMS of role {}".format(dev.device_role.slug))
+                if not dev.primary_ip:
+                    self.log_info(dev, "Device with no IP and not in LibreNMS")
+                else:
+                    self.log_failure(dev, "missing Netbox device from LibreNMS of role {}".format(dev.device_role.slug))
 
         self.log_success(None, "{} Netbox devices in LibreNMS".format(success))
 
