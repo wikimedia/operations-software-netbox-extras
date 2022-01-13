@@ -48,6 +48,7 @@ MODEL_EXCLUDES = (
             "c2l54ce-ycmfam90",  # Smart Link PRO2 (54) - secondary device
         ),
     )
+    | Q(device_type__manufacturer__slug="eaton")  # Doesn't report its vendor in  LibreNMS description/hardware
 )
 
 INVENTORY_EXCLUDES = Q(name="FPM Board")
@@ -63,7 +64,8 @@ DEVICE_EXCLUDES = Q(device_type__slug="srx1500", name__contains="pfw3b")
 INVENTORY_MANUFACTURERS = ("juniper",)
 
 # Some minor hacks for inventory items (keyed by netbox 'vendor " " model')
-MODEL_EQUIVS = {"juniper ex4300-48t": "juniper routing engine"}
+MODEL_EQUIVS = {"juniper ex4300-48t": "juniper routing engine",
+                "juniper qfx5120-48y-afi": "juniper fpc: jnp48y8c-chas @ 0/*/*"}
 
 
 class LibreNMSData:
@@ -242,8 +244,8 @@ class LibreNMS(Report):
                     self.log_failure(
                         device,
                         (
-                            "mismatch between LibreNMS and Netbox device types: Netbox devtype={}, "
-                            "LibreNMS devtype={} || {}"
+                            "mismatch between LibreNMS and Netbox device types: Netbox: {} (vendor model), "
+                            "LibreNMS: {} (description) || {} (hardware)"
                         ).format(
                             nb_vendor_model_string,
                             self.librenms.devices[device.serial]["description"],
@@ -269,8 +271,8 @@ class LibreNMS(Report):
                     self.log_failure(
                         device,
                         (
-                            "mismatch between LibreNMS and Netbox device types: Netbox devtype={}, "
-                            "LibreNMS devtype={}"
+                            "mismatch between LibreNMS and Netbox inventory; Netbox: {} (vendor model), "
+                            "LibreNMS: {} (vendor model)"
                         ).format(nb_vendor_model_string, librenms_vendor_model_string),
                     )
 
