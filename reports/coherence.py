@@ -12,9 +12,9 @@ from extras.reports import Report
 from django.db.models import Count
 
 
-SITE_BLOCKLIST = ('drmrs',)
+SITE_BLOCKLIST = ()
 DEVICE_ROLE_BLOCKLIST = ("cablemgmt", "storagebin", "optical-device")
-ASSET_TAG_RE = re.compile(r"WMF\d{4}")
+ASSET_TAG_RE = re.compile(r"WMF\d{4,}")  # Update the error message if you edit the regex
 TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
 JUNIPER_INVENTORY_PART_EXCLUDES = [
     "EX4500-VC1-128G",
@@ -40,7 +40,7 @@ class Coherence(Report):
             if device.asset_tag is None:
                 self.log_failure(device, "missing asset tag")
             elif not ASSET_TAG_RE.fullmatch(device.asset_tag):
-                self.log_failure(device, "malformed asset tag: {}".format(device.asset_tag))
+                self.log_failure(device, "malformed asset tag: {} (WMF then 4 or more digits)".format(device.asset_tag))
             else:
                 success_count += 1
         self.log_success(None, "{} correctly formatted asset tags".format(success_count))
@@ -119,7 +119,7 @@ class Coherence(Report):
         for device in _get_devices_query():
             if device.name.lower() != device.name:
                 if device.status == DeviceStatusChoices.STATUS_ACTIVE:
-                    self.log_failure(device, "malformed device name for active device")
+                    self.log_failure(device, "malformed device name for active device (should be lowercase)")
                 else:
                     warnings.append(device)
             elif (any(x in device.name for x in INVALID_ACTIVE_NAMES)
