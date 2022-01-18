@@ -141,6 +141,7 @@ class LibreNMS(Report):
         """
 
         success = 0
+        no_ip = 0
         for dev in (
             self._device_query.filter(device_role__slug__in=INCLUDE_DEVICE_ROLES)
             .exclude(MODEL_EXCLUDES)
@@ -155,10 +156,12 @@ class LibreNMS(Report):
 
             elif dev.site.slug not in EXCLUDE_SITES:
                 if not dev.primary_ip:
-                    self.log_info(dev, "Device with no IP and not in LibreNMS")
+                    no_ip += 1
                 else:
                     self.log_failure(dev, "missing Netbox device from LibreNMS of role {}".format(dev.device_role.slug))
 
+        if no_ip:
+            self.log_info(None, "{} Netbox devices with no IP and not in LibreNMS".format(no_ip))
         self.log_success(None, "{} Netbox devices in LibreNMS".format(success))
 
     def test_nb_inventory_in_librenms(self):
