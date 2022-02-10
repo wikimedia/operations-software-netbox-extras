@@ -325,20 +325,51 @@ class Importer:
             if 'mtu' in lldp_iface and lldp_iface['mtu'] != 1514:  # Get MTU but ignore the default one
                 mtu = lldp_iface['mtu']
 
-            iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED  # Default to 1G
-            if z_iface.startswith('xe-'):  # 10G start with xe-
-                iface_fmt = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
-            elif z_iface.startswith('et-'):  # If a server is et- it's 25G
-                iface_fmt = InterfaceTypeChoices.TYPE_25GE_SFP28
+            z_nbiface = self._create_z_nbiface(z_nbdevice, z_iface, mtu)
 
-            z_nbiface = Interface(name=z_iface,
-                                  mgmt_only=False,
-                                  device=z_nbdevice,
-                                  type=iface_fmt,
-                                  mtu=mtu)
-            z_nbiface.save()
-            self.log_success(f"{z_nbdevice}: created interface {z_iface}")
         return z_nbiface
+
+    def _create_z_nbiface(self, z_nbdevice, z_iface, mtu=None, iface_fmt=None):
+        """Create new int on device and return netbox object."""
+        if z_iface.startswith(SWITCH_INTERFACES_PREFIX_ALLOWLIST):
+            self._delete_orphan_nbiface(z_nbdevice, z_iface)
+
+        if not iface_fmt:
+            iface_fmt = self._get_iface_fmt(z_iface)
+
+        z_nbiface = Interface(name=z_iface,
+                              mgmt_only=False,
+                              device=z_nbdevice,
+                              type=iface_fmt,
+                              mtu=mtu)
+        z_nbiface.save()
+        self.log_success(f"{z_nbdevice}: created interface {z_iface}")
+        return z_nbiface
+
+    def _delete_orphan_nbiface(self, z_nbdevice, z_iface):
+        """Look for orphan int, renamed on device due to optic change, and delete if found."""
+        port_num = z_iface.split("-")[1]
+        for z_nbdevice_int in Interface.objects.filter(
+            device_id=z_nbdevice.id,
+            name__iregex=f"^({'|'.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}){port_num}$"
+        ):
+            if z_nbdevice_int.connected_endpoint or z_nbdevice_int.count_ipaddresses > 0:
+                # TODO Script should abort at this point not just log the error
+                self.log_failure(f"{z_nbdevice.name}: We need to remove interface {z_nbdevice_int.name}, before "
+                                 f"creating {z_iface}, however it still has a cable or IP address attached. "
+                                 "See https://wikitech.wikimedia.org/wiki/Netbox"
+                                 "#Error_removing_interface_after_speed_change")
+            else:
+                z_nbdevice_int_name = z_nbdevice_int.name
+                z_nbdevice_int.delete()
+                self.log_success(f"{z_nbdevice}: deleted orphan interface {z_nbdevice_int_name}")
+
+    def _get_iface_fmt(self, iface_name):
+        """Returns iface_fmt object for correct PHY type based on Juniper interface naming conventions"""
+        return {
+            'xe-': InterfaceTypeChoices.TYPE_10GE_SFP_PLUS,
+            'et-': InterfaceTypeChoices.TYPE_25GE_SFP28,
+        }.get(iface_name[0:3], InterfaceTypeChoices.TYPE_1GE_FIXED)
 
     def _update_z_vlan(self, lldp_iface, z_nbiface):
         """Sets the proper vlan info on a remote LLDP interface when needed."""
@@ -565,24 +596,19 @@ class Importer:
         self.log_success(f"{nbiface.device}: created cable {cable}")
         self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}")
 
-    def _update_z_iface(self, z_nbdevice, z_iface, vlan, type):
+    def _update_z_nbiface(self, z_nbdevice, z_iface, vlan, iface_fmt=None):
         """Create switch interface if needed and set vlan info."""
         try:
             # Try to find if the interface exists
             z_nbiface = z_nbdevice.interfaces.get(name=z_iface)
         except ObjectDoesNotExist:  # If interface doesn't exist: create it
-            z_nbiface = Interface(name=z_iface,
-                                  mgmt_only=False,
-                                  device=z_nbdevice,
-                                  type=type)
+            z_nbiface = self._create_z_nbiface(z_nbdevice, z_iface, 9192, iface_fmt)
             z_nbiface.save()
-            self.log_success(f"{z_nbdevice}: created interface {z_iface}.")
 
         # Then configure it
         z_nbiface.mode = 'access'
         z_nbiface.untagged_vlan = vlan
         z_nbiface.enabled = True
-        z_nbiface.mtu = 9192
         z_nbiface.save()
         self.log_success(f"{z_nbiface.device}:{z_nbiface} configured vlan.")
         return z_nbiface
@@ -893,6 +919,19 @@ class MoveServer(Script, Importer):
                              "only switches are supported, skipping.")
             return
 
+        if not re.match(f"^{'|'.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}", z_iface):
+            self.log_failure(f"{device}: Switch interface {z_iface} invalid, must start with "
+                             f"{' or '.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}.")
+            return
+
+        if z_nbdevice.virtual_chassis:
+            zint_vc_id = int(z_iface.split("-")[1].split("/")[0])
+            if zint_vc_id != z_nbdevice.vc_position:
+                self.log_failure(f"{device}: Interface name {z_iface} invalid, first digit of port "
+                                 f"number should be {z_nbdevice.vc_position}, matching {z_nbdevice.name} "
+                                 "virtual-chassis postition.")
+                return
+
         # find main interface
         ifaces_connected = device.interfaces.filter(mgmt_only=False).exclude(cable=None)
         if len(ifaces_connected) != 1:
@@ -910,7 +949,7 @@ class MoveServer(Script, Importer):
             z_old_nbiface = nbcable.termination_b
 
         # Configure the new switch interface
-        z_nbiface = self._update_z_iface(z_nbdevice, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type)
+        z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type)
         if z_nbiface.cable:
             self.log_failure(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), skipping.")
             return
@@ -1058,6 +1097,19 @@ class ProvisionServerNetwork(Script, Importer):
                              "only switches are supported, skipping.")
             return
 
+        if not re.match(f"^{'|'.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}", z_iface):
+            self.log_failure(f"{z_nbdevice.name}: Interface name {z_iface} invalid, must start with "
+                             f"{' or '.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}.")
+            return
+
+        if z_nbdevice.virtual_chassis:
+            zint_vc_id = int(z_iface.split("-")[1].split("/")[0])
+            if zint_vc_id != z_nbdevice.vc_position:
+                self.log_failure(f"{device}: Interface name {z_iface} invalid, first digit of port "
+                                 f"number should be {z_nbdevice.vc_position}, matching {z_nbdevice.name} "
+                                 "virtual-chassis postition.")
+                return
+
         ifaces = device.interfaces.all()
         #  If the device have interface(s)
         if ifaces:
@@ -1083,21 +1135,16 @@ class ProvisionServerNetwork(Script, Importer):
         if not self._is_vlan_valid(vlan, device):
             return
 
-        iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED  # Default to 1G
-        if z_iface.startswith('xe-'):  # 10G start with xe-
-            iface_fmt = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
-        elif z_iface.startswith('et-'):  # If a server is et- it's 25G
-            iface_fmt = InterfaceTypeChoices.TYPE_25GE_SFP28
-
         if device.tenant is not None and device.tenant.slug == FRACK_TENANT_SLUG:
             self.log_warning(f"{device}: Skipping Primary IP allocation with tenant {device.tenant}. "
                              "Primary IP allocation for Fundraising Tech is done manually in the DNS repository.")
         else:
+            iface_fmt = self._get_iface_fmt(z_iface)
             nbiface = self._assign_primary(device, vlan, iface_type=iface_fmt, skip_ipv6_dns=data["skip_ipv6_dns"],
                                            cassandra_instances=int(data["cassandra_instances"]))
 
             # Now that we're done with the primary interface, we tackle the switch side
-            z_nbiface = self._update_z_iface(z_nbdevice, z_iface, vlan, iface_fmt)
+            z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, vlan)
 
             # And now the cable between the two
             # If the switch port already have a cable, we don't try to delete it
