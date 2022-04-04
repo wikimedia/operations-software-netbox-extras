@@ -111,7 +111,8 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
                 invalid_device = Device.objects.get(name=device)
                 self.log_failure(
                     invalid_device,
-                    "unexpected state for physical device: {} in netbox".format(invalid_device.get_status_display()),
+                    ("Device is in Puppet but is {} in Netbox (should be Staged, Active or Failed)")
+                    .format(invalid_device.get_status_display()),
                 )
             else:
                 self.log_failure(None, "expected device missing from Netbox: {}".format(device))
@@ -128,7 +129,8 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             if device.name not in puppetdb_devices:
                 self.log_failure(
                     device,
-                    "missing physical device in PuppetDB: state {} in Netbox".format(device.get_status_display()),
+                    ("Device is {} in Netbox but is missing from in PuppetDB (should be {})")
+                    .format(device.get_status_display(), EXCLUDE_AND_FAILED_STATUSES),
                 )
             elif puppetdb_devices[device.name]:  # True if device is is_virtual
                 self.log_failure(device, "expected physical device marked as virtual in PuppetDB")
