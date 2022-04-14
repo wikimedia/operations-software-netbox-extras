@@ -4,3 +4,4 @@
 /dns/config.ini
 *~
 *.pyc
+.vscode/

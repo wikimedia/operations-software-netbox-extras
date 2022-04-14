@@ -85,6 +85,29 @@ class Network(Report):
                 continue
             self.log_failure(interface, "Interface enabled but not connected on {}".format(interface.device))
 
+    def test_disabled_configured(self):
+        """No interface on a network device should be disabled but with config data.
+
+        Exception being interfaces with "no-mon" in the description.
+        """
+
+        attributes = ['description', 'lag', 'mtu', 'mode', 'cable', 'mac_address', 'count_ipaddresses']
+        for interface in (Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)
+                                           .exclude(device__status__in=EXCLUDE_STATUSES)
+                                           .exclude(enabled=True)):
+            no_mon = False
+            # Warning only for interfaces with "no-mon" in the description
+            if interface.description and "no-mon" in interface.description:
+                no_mon = True
+
+            for attribute in attributes:
+                if getattr(interface, attribute):
+                    if no_mon:
+                        self.log_warning(interface, f"[no-mon] Interface disabled but "
+                                                    f"{attribute} set on {interface.device}")
+                    else:
+                        self.log_failure(interface, f"Interface disabled but {attribute} set on {interface.device}")
+
     def test_primary_ipv6(self):
         """Report servers that either have a missing primary_ip6 or have a primary_ip6 without a DNS name set.
 
