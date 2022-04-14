@@ -91,9 +91,10 @@ class Network(Report):
         Exception being interfaces with "no-mon" in the description.
         """
 
-        attributes = ['description', 'lag', 'mtu', 'mode', 'cable', 'mac_address', 'count_ipaddresses']
+        attributes = ['description', 'lag', 'mtu', 'mode', 'mac_address', 'count_ipaddresses']
         for interface in (Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)
                                            .exclude(device__status__in=EXCLUDE_STATUSES)
+                                           .exclude(cable__isnull=False)
                                            .exclude(enabled=True)):
             no_mon = False
             # Warning only for interfaces with "no-mon" in the description
