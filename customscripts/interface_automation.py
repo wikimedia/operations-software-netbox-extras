@@ -601,6 +601,10 @@ class Importer:
         try:
             # Try to find if the interface exists
             z_nbiface = z_nbdevice.interfaces.get(name=z_iface)
+            if z_nbiface.cable:
+                self.log_warning(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), "
+                                 f"Skipping interface configuration, please do it manually")
+                return z_nbiface
         except ObjectDoesNotExist:  # If interface doesn't exist: create it
             z_nbiface = self._create_z_nbiface(z_nbdevice, z_iface, 9192, iface_fmt)
             z_nbiface.save()
