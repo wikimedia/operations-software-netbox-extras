@@ -596,7 +596,7 @@ class Importer:
         self.log_success(f"{nbiface.device}: created cable {cable}")
         self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}")
 
-    def _update_z_nbiface(self, z_nbdevice, z_iface, vlan, iface_fmt=None):
+    def _update_z_nbiface(self, z_nbdevice, z_iface, vlan, iface_fmt=None, tagged_vlans=None):
         """Create switch interface if needed and set vlan info."""
         try:
             # Try to find if the interface exists
@@ -606,7 +606,11 @@ class Importer:
             z_nbiface.save()
 
         # Then configure it
-        z_nbiface.mode = 'access'
+        if tagged_vlans:
+            z_nbiface.mode = 'tagged'
+            z_nbiface.tagged_vlans.set(tagged_vlans)
+        else:
+            z_nbiface.mode = 'access'
         z_nbiface.untagged_vlan = vlan
         z_nbiface.enabled = True
         z_nbiface.save()
@@ -949,7 +953,8 @@ class MoveServer(Script, Importer):
             z_old_nbiface = nbcable.termination_b
 
         # Configure the new switch interface
-        z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type)
+        z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type,
+                                           list(z_old_nbiface.tagged_vlans.all()))
         if z_nbiface.cable:
             self.log_failure(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), skipping.")
             return
