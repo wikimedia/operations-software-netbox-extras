@@ -107,8 +107,19 @@ class ReplaceDevice(Script):
             # Move the objects from the source to the destination
             for object in source_objects.all():
                 object.device = destination_device
-                object.save()
                 self.log_success(f"Moved {attribute} {object.name}")
+
+                # Fix for T259166#7868195
+                if hasattr(object, 'cable') and object.cable:
+                    if object.cable._termination_a_device == source_device:
+                        object.cable._termination_a_device = destination_device
+                        object.cable._termination_a_device_id = destination_device.id
+                        self.log_success(f"Updated cable {object.cable} termination A")
+                    if object.cable._termination_b_device == source_device:
+                        object.cable._termination_b_device = destination_device
+                        object.cable._termination_b_device_id = destination_device.id
+                        self.log_success(f"Updated cable {object.cable} termination B")
+                object.save()
 
         source_device.save()
         destination_device.save()
