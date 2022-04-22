@@ -114,10 +114,12 @@ class ReplaceDevice(Script):
                     if object.cable._termination_a_device == source_device:
                         object.cable._termination_a_device = destination_device
                         object.cable._termination_a_device_id = destination_device.id
+                        object.cable.save()
                         self.log_success(f"Updated cable {object.cable} termination A")
                     if object.cable._termination_b_device == source_device:
                         object.cable._termination_b_device = destination_device
                         object.cable._termination_b_device_id = destination_device.id
+                        object.cable.save()
                         self.log_success(f"Updated cable {object.cable} termination B")
                 object.save()
 
