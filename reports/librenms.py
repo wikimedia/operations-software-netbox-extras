@@ -46,8 +46,7 @@ DEVICE_EXCLUDES = Q(device_type__slug="srx1500", name__contains="pfw3b")
 INVENTORY_MANUFACTURERS = ("juniper",)
 
 # Some minor hacks for inventory items (keyed by netbox 'vendor " " model')
-MODEL_EQUIVS = {"juniper ex4300-48t": "juniper routing engine",
-                "juniper qfx5120-48y-afi": "juniper fpc: jnp48y8c-chas @ 0/*/*"}
+MODEL_EQUIVS = {"juniper ex4300-48t": "juniper routing engine"}
 
 
 class LibreNMSData:
