@@ -1124,6 +1124,19 @@ class ProvisionServerNetwork(Script, Importer):
                                  f"number should be 0 as {z_nbdevice.name} is not a virtual chassis.")
                 return
 
+        # Check that we don't reuse a cable ID
+        cables_with_same_id = Cable.objects.filter(label=cable_id)
+        duplicate_cable_id = False
+        for cable in cables_with_same_id:
+            if cable.termination_a_type == interface_ct and cable.termination_a.device.site == device.site:
+                duplicate_cable_id = True
+            if cable.termination_b_type == interface_ct and cable.termination_b.device.site == device.site:
+                duplicate_cable_id = True
+
+        if duplicate_cable_id:
+            self.log_failure(f"Cable ID {cable_id} already assigned in {device.site.slug}.")
+            return
+
         ifaces = device.interfaces.all()
         #  If the device have interface(s)
         if ifaces:
