@@ -1118,6 +1118,11 @@ class ProvisionServerNetwork(Script, Importer):
                                  f"number should be {z_nbdevice.vc_position}, matching {z_nbdevice.name} "
                                  "virtual-chassis postition.")
                 return
+        else:
+            if int(z_iface.split("-")[1].split("/")[0]) != 0:
+                self.log_failure(f"{device}: Interface name {z_iface} invalid, first digit of port "
+                                 f"number should be 0 as {z_nbdevice.name} is not a virtual chassis.")
+                return
 
         ifaces = device.interfaces.all()
         #  If the device have interface(s)
