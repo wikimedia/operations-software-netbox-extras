@@ -11,7 +11,7 @@ from collections import defaultdict
 
 from django.contrib.contenttypes.models import ContentType
 
-from dcim.choices import CableStatusChoices, DeviceStatusChoices
+from dcim.choices import DeviceStatusChoices, LinkStatusChoices
 
 from dcim.models import Cable, ConsolePort, ConsoleServerPort, Interface, PowerPort, PowerOutlet
 from extras.reports import Report
@@ -179,7 +179,7 @@ class Cables(Report):
         Except for core sites servers (see T266533).
         """
         success = 0
-        for cable in Cable.objects.filter(status=CableStatusChoices.STATUS_CONNECTED):
+        for cable in Cable.objects.filter(status=LinkStatusChoices.STATUS_CONNECTED):
             if cable.label is None or not cable.label.strip():
                 site = self._get_site_slug_for_cable(cable)
                 if self._core_site_server_cable(cable):

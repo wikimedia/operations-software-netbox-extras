@@ -13,12 +13,12 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from django.contrib.contenttypes.models import ContentType
 
-from dcim.choices import CableStatusChoices, CableTypeChoices, InterfaceTypeChoices
+from dcim.choices import CableTypeChoices, InterfaceTypeChoices, LinkStatusChoices
 from dcim.models import Cable, Device, Interface, VirtualChassis
 from extras.scripts import BooleanVar, ChoiceVar, FileVar, ObjectVar, Script, StringVar, TextVar
 from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix, VLAN
-from ipam.filters import PrefixFilterSet
+from ipam.filtersets import PrefixFilterSet
 from utilities.choices import ColorChoices
 from virtualization.models import VirtualMachine, VMInterface
 
@@ -577,11 +577,11 @@ class Importer:
         # Exceptions are yellow fibers for longer distances like LVS, or special sites like ulsfo
         if nbiface.type == InterfaceTypeChoices.TYPE_1GE_FIXED:
             color = ColorChoices.COLOR_BLUE
-            color_human = ColorChoices.as_dict()[color]
+            color_human = dict(ColorChoices)[color]
             cable_type = CableTypeChoices.TYPE_CAT5E
         elif nbiface.type in (InterfaceTypeChoices.TYPE_10GE_SFP_PLUS, InterfaceTypeChoices.TYPE_25GE_SFP28):
             color = ColorChoices.COLOR_BLACK
-            color_human = ColorChoices.as_dict()[color]
+            color_human = dict(ColorChoices)[color]
             cable_type = CableTypeChoices.TYPE_DAC_PASSIVE
 
         cable = Cable(termination_a=nbiface,
@@ -591,7 +591,7 @@ class Importer:
                       label=label,
                       color=color,
                       type=cable_type,
-                      status=CableStatusChoices.STATUS_CONNECTED)
+                      status=LinkStatusChoices.STATUS_CONNECTED)
         cable.save()
         self.log_success(f"{nbiface.device}: created cable {cable}")
         self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}")
@@ -1167,9 +1167,14 @@ class ProvisionServerNetwork(Script, Importer):
             self.log_warning(f"{device}: Skipping Primary IP allocation with tenant {device.tenant}. "
                              "Primary IP allocation for Fundraising Tech is done manually in the DNS repository.")
         else:
+            try:
+                cassandra_instances = int(data["cassandra_instances"])
+            except ValueError:
+                # if this is not set it defaults to ''
+                cassandra_instances = 0
             iface_fmt = self._get_iface_fmt(z_iface)
             nbiface = self._assign_primary(device, vlan, iface_type=iface_fmt, skip_ipv6_dns=data["skip_ipv6_dns"],
-                                           cassandra_instances=int(data["cassandra_instances"]))
+                                           cassandra_instances=cassandra_instances)
 
             # Now that we're done with the primary interface, we tackle the switch side
             z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, vlan)
@@ -1295,7 +1300,7 @@ class ProvisionServerNetwork(Script, Importer):
             if vlan_type == 'cloud-hosts':
                 old_vlan_name = f"cloud-hosts1-{device.site.slug}"
             else:
-                old_vlan_name = f"{vlan_type}1-{device.rack.group.slug.split('-')[-1]}-{device.site.slug}"
+                old_vlan_name = f"{vlan_type}1-{device.rack.location.slug.split('-')[-1]}-{device.site.slug}"
         else:
             if vlan_type not in VLAN_POP_TYPES:
                 self.log_failure(f"{device}: VLAN type {vlan_type} not available in site {device.site.slug}, skipping.")
@@ -1334,10 +1339,10 @@ class ProvisionServerNetwork(Script, Importer):
             return True
 
         racks = {dev.rack for dev in devices}
-        rack_groups = {rack.group for rack in racks}
-        if device.rack.group not in rack_groups:
-            self.log_failure(f"{device} is in row {device.rack.group} but VLAN {vlan.name} is present only in "
-                             f"{rack_groups}. Skipping device because of invalid VLAN.")
+        rack_locations = {rack.location for rack in racks}
+        if device.rack.location not in rack_locations:
+            self.log_failure(f"{device} is in row {device.rack.location} but VLAN {vlan.name} is present only in "
+                             f"{rack_locations}. Skipping device because of invalid VLAN.")
             return False
 
         if device.rack not in racks:

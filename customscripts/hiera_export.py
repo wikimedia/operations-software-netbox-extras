@@ -59,8 +59,8 @@ class HieraExport(Script):
             if isinstance(device, Device):
                 if device.rack:
                     hosts[device.name]['location']['rack'] = device.rack.name
-                    if device.rack.group:
-                        hosts[device.name]['location']['row'] = device.rack.group.slug
+                    if device.rack.location:
+                        hosts[device.name]['location']['row'] = device.rack.location.slug
             if isinstance(device, VirtualMachine):
                 if device.cluster:
                     hosts[device.name]['location']['cluster'] = device.cluster.name

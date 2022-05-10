@@ -17,7 +17,7 @@ class GetDeviceStats(Script):
         counts = Counter()
         output = StringIO()
         for device in Device.objects.all().values_list(
-            "status", "site__slug", "rack__group__slug", "device_type__manufacturer__slug"
+            "status", "site__slug", "rack__location__slug", "device_type__manufacturer__slug"
         ):
             counts[(device[0], device[1], device[2], device[3])] += 1
 
