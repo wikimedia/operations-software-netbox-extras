@@ -109,6 +109,37 @@ class Network(Report):
                     else:
                         self.log_failure(interface, f"Interface disabled but {attribute} set on {interface.device}")
 
+    def test_mtu(self):
+        """Reports on interfaces not using our MTU standards."""
+
+        for interface in (Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)  # Network devices
+                                           .exclude(cable__isnull=True)  # Ignore interfaces with no cables
+                                           .exclude(mtu__in=(9192, 9216))  # Ignore anything with the good MTU
+                                           .exclude(lag__isnull=False)  # Ignore LAG members
+                                           .exclude(enabled=False)):  # Ignore disabled interfaces
+
+            # Ignore interfaces not ultimately connected to a device
+            # Eg. transit
+            if not hasattr(interface.connected_endpoint, 'device'):
+                continue
+
+            # If connected to a server, report it
+            if interface.connected_endpoint.device.device_role.slug == "server":
+                self.log_warning(interface, f"Server facing interface with MTU != 9192 on {interface.device.name}")
+
+            # Core links, connected to a network device
+            elif interface.connected_endpoint.device.device_role.slug in NETWORK_ROLES:
+                # Ignore VC links:
+                if str(interface.name).startswith('vcp-'):
+                    continue
+                # Report core links with different MTU on each side:
+                elif interface.connected_endpoint.mtu != interface.mtu:
+                    self.log_warning(interface, "Core link with MTU missmatch")
+                    continue
+
+                # Report any other non-standard MTU
+                self.log_warning(interface, f"Core link with invalid MTU on {interface.device.name}")
+
     def test_primary_ipv6(self):
         """Report servers that either have a missing primary_ip6 or have a primary_ip6 without a DNS name set.
 
