@@ -215,6 +215,7 @@ class RecordBase:
         self.hostname = hostname
         self.interface = ipaddress.ip_interface(ip_interface)
         self.ip = self.interface.ip
+        self.comment = ''
 
     def __hash__(self) -> int:
         """Object hash.
@@ -285,7 +286,8 @@ class ReverseRecord(RecordBase):
             str: the object representation.
 
         """
-        return f'{self.pointer.ljust(3)} 1H IN PTR {self.hostname}.'
+        comment = f' ; {self.comment}' if self.comment else ''
+        return f'{self.pointer.ljust(3)} 1H IN PTR {self.hostname}.{comment}'
 
     def to_tuple(self) -> Tuple:
         """Tuple representation suitable to be used for sorting records.
@@ -308,8 +310,9 @@ class ForwardRecord(RecordBase):
 
         """
         record_type = 'AAAA' if self.ip.version == 6 else 'A'
+        comment = f' ; {self.comment}' if self.comment else ''
         # Fixed justification to avoid large diffs
-        return f'{self.hostname.ljust(40)} 1H IN {record_type} {self.ip.compressed}'
+        return f'{self.hostname.ljust(40)} 1H IN {record_type} {self.ip.compressed}{comment}'
 
     def to_tuple(self) -> Tuple:
         """Tuple representation suitable to be used for sorting records.
@@ -332,6 +335,7 @@ class ForwardRecord(RecordBase):
         """
         matching_prefixes = [prefix for prefix in prefixes if self.ip in prefix]
         if not matching_prefixes:  # External address not managed by us, skip the PTR entirely
+            self.comment = 'wmf-zone-validator-ignore=MISSING_PTR_FOR_NAME_AND_IP'
             return None
 
         if self.ip.version == 6:  # For IPv6 PTRs we always split the zone at /64 and write the last 16 nibbles
