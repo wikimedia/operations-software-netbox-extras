@@ -109,10 +109,9 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     if parsed_args.command == 'push':
         if not parsed_args.path.exists():
-            parser.error("Path '{path}' does not exists.".format(path=parsed_args.path))
+            parser.error(f"Path '{parsed_args.path}' does not exists.")
         if not parsed_args.path.stem.startswith(TMP_DIR_PREFIX):
-            parser.error("Path '{path}' doesn't match the directory prefix '{prefix}'.".format(
-                path=parsed_args.path, prefix=TMP_DIR_PREFIX))
+            parser.error(f"Path '{parsed_args.path}' doesn't match the directory prefix '{TMP_DIR_PREFIX}'.")
 
     return parsed_args
 
@@ -286,7 +285,7 @@ class ReverseRecord(RecordBase):
             str: the object representation.
 
         """
-        return '{ptr} 1H IN PTR {hostname}.'.format(ptr=self.pointer.ljust(3), hostname=self.hostname)
+        return f'{self.pointer.ljust(3)} 1H IN PTR {self.hostname}.'
 
     def to_tuple(self) -> Tuple:
         """Tuple representation suitable to be used for sorting records.
@@ -310,8 +309,7 @@ class ForwardRecord(RecordBase):
         """
         record_type = 'AAAA' if self.ip.version == 6 else 'A'
         # Fixed justification to avoid large diffs
-        return '{hostname} 1H IN {type} {ip}'.format(
-            hostname=self.hostname.ljust(40), type=record_type, ip=self.ip.compressed)
+        return f'{self.hostname.ljust(40)} 1H IN {record_type} {self.ip.compressed}'
 
     def to_tuple(self) -> Tuple:
         """Tuple representation suitable to be used for sorting records.
@@ -613,8 +611,7 @@ def run_commit(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> T
         batch_status.update(commit.stats.total)
         return batch_status, 0
 
-    answer = input('OK to push the changes to the {origin} repository? (y/n) '.format(
-        origin=config.get('dns_snippets', 'repo_path')))
+    answer = input(f'OK to push the changes to the {config.get("dns_snippets", "repo_path")} repository? (y/n) ')
     if answer == 'y':
         ret_code = push(working_repo, commit.hexsha)
     else:
@@ -634,8 +631,8 @@ def save_icinga_state(ret_code: int, netbox: Netbox, state_file: str) -> None:
         ret_code = 2
     else:
         if netbox.changelog_since(datetime.now() - timedelta(minutes=ALLOWED_CHANGES_MINUTES)):
-            message = 'Netbox has uncommitted DNS changes, but last edit in Netbox is within {n} minutes'.format(
-                n=ALLOWED_CHANGES_MINUTES)
+            message = ('Netbox has uncommitted DNS changes, but last edit in Netbox is within '
+                       f'{ALLOWED_CHANGES_MINUTES} minutes')
             ret_code = 1
         else:
             message = 'Netbox has uncommitted DNS changes'
@@ -697,7 +694,7 @@ def main() -> int:
 
     finally:
         if args.command == 'commit' and not args.batch and ret_code not in (0, NO_CHANGES_RETURN_CODE):
-            print('An error occurred, the generated files can be inspected in {tmpdir}'.format(tmpdir=tmpdir))
+            print(f'An error occurred, the generated files can be inspected in {tmpdir}')
             input('Press any key to cleanup the generated files and exit ')
 
         if ((args.command == 'commit' and not args.batch and not args.keep_files)
