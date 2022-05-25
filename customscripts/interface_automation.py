@@ -1304,10 +1304,10 @@ class ProvisionServerNetwork(Script, Importer):
             old_vlan_name = f"{vlan_type}1-{device.site.slug}"
 
         try:
-            return VLAN.objects.get(name=old_vlan_name, status="active")
+            return VLAN.objects.get(name=new_vlan_name, status="active")
         except ObjectDoesNotExist:
             try:
-                return VLAN.objects.get(name=new_vlan_name, status="active")
+                return VLAN.objects.get(name=old_vlan_name, status="active")
             except ObjectDoesNotExist:
                 self.log_failure(
                     f"{device}: unable to find VLAN with name {old_vlan_name} or {new_vlan_name}, skipping.")
