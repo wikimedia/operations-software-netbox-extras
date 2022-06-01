@@ -9,12 +9,17 @@ Requires google-api-python-client and google-auth-oauthlib.
 
 import configparser
 from datetime import date, datetime, timedelta
+from urllib.parse import urlparse
 
 from dcim.models import Device
 from extras.reports import Report
+from netbox import configuration
 
 import googleapiclient.discovery
 from google.oauth2 import service_account
+from google_auth_httplib2 import AuthorizedHttp
+from httplib2 import Http, ProxyInfo
+from httplib2.socks import PROXY_TYPE_HTTP
 
 CONFIG_FILE = "/etc/netbox/gsheets.cfg"
 
@@ -42,9 +47,20 @@ class Accounting(Report):
         creds = service_account.Credentials.from_service_account_info(
             creds, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
         )
+        try:
+            proxy = urlparse(
+                configuration.HTTP_PROXIES.get(
+                    'https',
+                    configuration.HTTP_PROXIES['http']
+                )
+            )
+            http = Http(proxy_info=ProxyInfo(PROXY_TYPE_HTTP, proxy.hostname, proxy.port))
+        except (KeyError, AttributeError):
+            # either no or badly formed HTTP_PROXIES
+            http = Http()
 
-        # initialize the Sheets API
-        service = googleapiclient.discovery.build("sheets", "v4", credentials=creds)
+        authorized_http = AuthorizedHttp(credentials=creds, http=http)
+        service = googleapiclient.discovery.build("sheets", "v4", http=authorized_http)
         sheet = service.spreadsheets()
 
         # and fetch the spreadsheet's contents
