@@ -13,7 +13,8 @@ from django.db.models import Count
 
 
 SITE_BLOCKLIST = ()
-DEVICE_ROLE_BLOCKLIST = ("cablemgmt", "storagebin", "optical-device")
+DEVICE_ROLE_BLOCKLIST = ("cablemgmt", "storagebin", "optical-device", "patch-panel")
+ASSET_TAG_BLOCKLIST = ("patch-panel",)
 ASSET_TAG_RE = re.compile(r"WMF\d{4,}")  # Update the error message if you edit the regex
 TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
 JUNIPER_INVENTORY_PART_EXCLUDES = [
@@ -25,7 +26,7 @@ JUNIPER_INVENTORY_DESC_RE = re.compile(r".*Purchase:\d{4}-\d{2}-\d{2},Task:(T\d{
 INVALID_ACTIVE_NAMES = ['future', 'spare']
 
 
-def _get_devices_query(cf=False):
+def _get_devices_query():
     devices = Device.objects.exclude(site__slug__in=SITE_BLOCKLIST)
     return devices
 
@@ -36,7 +37,7 @@ class Coherence(Report):
     def test_malformed_asset_tags(self):
         """Test for missing asset tags and incorrectly formatted asset tags."""
         success_count = 0
-        for device in _get_devices_query():
+        for device in _get_devices_query().exclude(device_role__slug__in=ASSET_TAG_BLOCKLIST):
             if device.asset_tag is None:
                 self.log_failure(device, "missing asset tag")
             elif not ASSET_TAG_RE.fullmatch(device.asset_tag):
@@ -101,7 +102,7 @@ class Coherence(Report):
     def test_ticket(self):
         """Determine if the procurement ticket matches the expected format."""
         success_count = 0
-        for device in _get_devices_query(cf=True):
+        for device in _get_devices_query():
             ticket = str(device.cf["ticket"])
             if TICKET_RE.fullmatch(ticket):
                 success_count += 1
