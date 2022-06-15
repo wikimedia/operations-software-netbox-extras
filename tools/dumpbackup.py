@@ -29,7 +29,7 @@ ALL_TABLES = {
     "dcim.platforms",
     "dcim.device_types",
     "dcim.manufacturers",
-    "dcim.links",
+    "dcim.cables",
     "dcim.inventory_items",
     "dcim.interfaces",
     "ipam.ip_addresses",
