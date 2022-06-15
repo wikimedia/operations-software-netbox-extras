@@ -1,11 +1,12 @@
 """
 Report parity errors between PuppetDB and Netbox.
 """
-
 import configparser
-import requests
 
+from copy import deepcopy
 from functools import lru_cache
+
+import requests
 
 from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
@@ -141,7 +142,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
 
     def test_puppetdb_serials(self):
         """Check that devices that exist in both PuppetDB and Netbox have matching serial numbers."""
-        devices = DEVICE_QUERY.clone()
+        devices = deepcopy(DEVICE_QUERY)
         puppetdb_serials = self._get_puppetdb_fact("serialnumber")
         success = 0
 
@@ -162,7 +163,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
 
     def test_puppetdb_models(self):
         """Check that the device productname in PuppetDB match models set in Netbox"""
-        devices = DEVICE_QUERY.clone()
+        devices = deepcopy(DEVICE_QUERY)
         puppetdb_models = self._get_puppetdb_fact("productname")
         success = 0
 
