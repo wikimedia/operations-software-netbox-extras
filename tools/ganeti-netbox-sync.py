@@ -131,7 +131,7 @@ def sync_ganeti_to_netbox(netbox_api, netbox_token, cluster_name, ganeti_hosts, 
 
     nb_vhosts = {}
     # make a convenient dictionary of netbox hosts
-    for host in nbapi.virtualization.virtual_machines.filter(cluster_id=nb_cluster_id):
+    for host in nbapi.virtualization.virtual_machines.filter(cluster=nb_cluster_id):
         nb_vhosts[host.name] = host
 
     results = Counter()
