@@ -12,7 +12,9 @@ from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 
 from dcim.models import Device, Interface
 from extras.reports import Report
-from ipam.models import IPAddress
+from ipam.models import IPAddress, Prefix
+
+from django.db.models import Count
 
 EXCLUDE_STATUSES = (
     DeviceStatusChoices.STATUS_DECOMMISSIONING,
@@ -280,3 +282,35 @@ class Network(Report):
             else:
                 success += 1
         self.log_success(None, "{} correct mgmt DNS names".format(success))
+
+    def test_matching_vlan(self):
+        """Check IPs are assigned to server ports match the connected Vlan
+
+        Every IP address bound to a host interface should come from the correct
+        subnet, matching the Vlan the equivalent switch port is bound to.
+        """
+
+        success = 0
+        for interface in (Interface.objects.filter(device__device_role__slug="server")
+                                           .exclude(cable__isnull=True)
+                                           .annotate(Count('ip_addresses'))
+                                           .filter(ip_addresses__count__gte=1)):
+            if interface.connected_endpoint.device.device_role.slug in ('asw', 'cloudsw'):
+                for family in [4, 6]:
+                    try:
+                        vlan_pfx = interface.connected_endpoint.untagged_vlan.prefixes.get(prefix__family=family)
+                    except Prefix.MultipleObjectsReturned:
+                        self.log_failure(interface.device, f"Vlan {interface.connected_endpoint.untagged_vlan} "
+                                                           f"has more than one IPv{family} prefix assigned")
+                        vlan_pfx = interface.connected_endpoint.untagged_vlan.prefixes.filter(prefix__family=family)[0]
+                    for ip_addr in interface.ip_addresses.filter(address__family=family):
+                        if (ip_addr.address.network != vlan_pfx.prefix.network
+                           or ip_addr.address.prefixlen != vlan_pfx.prefix.prefixlen):
+                            self.log_failure(interface.device,
+                                             f"{ip_addr.address} does not match connected Vlan "
+                                             f"{interface.connected_endpoint.untagged_vlan}")
+                        else:
+                            success += 1
+
+        if success > 0:
+            self.log_success(None, f"{success} server IP allocations matched attached switch port Vlan.")
