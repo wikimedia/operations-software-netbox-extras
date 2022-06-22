@@ -122,10 +122,11 @@ class Network(Report):
             # Eg. transit
             if not hasattr(interface.connected_endpoint, 'device'):
                 continue
-
+            z_device_name = interface.connected_endpoint.device.name
             # If connected to a server, report it
             if interface.connected_endpoint.device.device_role.slug == "server":
-                self.log_warning(interface, f"Server facing interface with MTU != 9192 on {interface.device.name}")
+                self.log_failure(interface, f"[{interface.device.site.slug}] {z_device_name} switch interface "
+                                            "MTU invalid (should be 9192)")
 
             # Core links, connected to a network device
             elif interface.connected_endpoint.device.device_role.slug in NETWORK_ROLES:
@@ -134,11 +135,14 @@ class Network(Report):
                     continue
                 # Report core links with different MTU on each side:
                 elif interface.connected_endpoint.mtu != interface.mtu:
-                    self.log_warning(interface, "Core link with MTU missmatch")
+                    self.log_warning(interface, f"[{interface.device.site.slug}] MTU mismatch on link between "
+                                                f"{interface.device.name} ({interface.mtu}) and "
+                                                f"{z_device_name} ({interface.connected_endpoint.mtu})")
                     continue
 
                 # Report any other non-standard MTU
-                self.log_warning(interface, f"Core link with invalid MTU on {interface.device.name}")
+                self.log_warning(interface, f"[{interface.device.site.slug}] {interface.device.name} core link with "
+                                            f"invalid MTU ({interface.mtu})")
 
     def test_primary_ipv6(self):
         """Report servers that either have a missing primary_ip6 or have a primary_ip6 without a DNS name set.
@@ -203,7 +207,7 @@ class Network(Report):
             if not device.primary_ip4.dns_name or not device.primary_ip6.dns_name:
                 continue
             if device.primary_ip4.dns_name != device.primary_ip6.dns_name:
-                self.log_failure(device, "Primary IPv4 and IPv6 DNS name missmatch ({} vs. {})"
+                self.log_failure(device, "Primary IPv4 and IPv6 DNS name mismatch ({} vs. {})"
                                          .format(device.primary_ip4.dns_name, device.primary_ip6.dns_name))
                 continue
             else:
