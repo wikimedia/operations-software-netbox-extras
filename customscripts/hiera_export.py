@@ -63,7 +63,7 @@ class HieraExport(Script):
                         hosts[device.name]['location']['row'] = device.rack.location.slug
             if isinstance(device, VirtualMachine):
                 if device.cluster:
-                    hosts[device.name]['location']['cluster'] = device.cluster.name
+                    hosts[device.name]['location']['ganeti_cluster'] = device.cluster.name
         return hosts
 
     def run(self, data: Dict, commit: bool) -> str:
