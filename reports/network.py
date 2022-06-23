@@ -2,6 +2,7 @@
 Report on various network related errors.
 
 """
+import re
 
 from collections import defaultdict
 
@@ -21,9 +22,46 @@ EXCLUDE_STATUSES = (
 )
 SWITCHES_ROLES = ("asw", "msw", "cloudsw")
 NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw")
-
-
 ACCESS_INTERFACES_PREFIX = ("et-", "xe-", "ge-")
+NO_V6_DEVICE_NAME_PREFIXES = (
+    "cloudbackup",
+    "cloudcephmon",
+    "cloudcephosd",
+    "clouddb",
+    "cloudnet",
+    "cloudvirt",
+    "cloudvirt-wdqs",
+    "db",
+    "dbprov",
+    "dbproxy",
+    "dbstore",
+    "dumpsdata",
+    "es",
+    "ganeti",
+    "graphite",
+    "kafka-logging",
+    "logstash",
+    "lvs",
+    "maps",
+    "mc",
+    "mc-gp",
+    "ms-be",
+    "mw",
+    "mwlog",
+    "ores",
+    "parse",
+    "pc",
+    "rdb",
+    "restbase",
+    "restbase-dev",
+    "sessionstore",
+    "snapshot",
+    "thanos-fe",
+    "thumbor",
+    "wdqs",
+    "wtp",
+)
+NO_V6_DEVICE_NAMES = ("scandium",)
 
 
 class Network(Report):
@@ -155,12 +193,19 @@ class Network(Report):
         for device in (Device.objects.filter(device_role__slug="server", tenant__isnull=True)
                                      .exclude(status__in=EXCLUDE_STATUSES)):
             if not device.primary_ip6:
-                self.log_warning(device, "Missing primary IPv6")
+                self.log_failure(device, "Missing primary IPv6")
                 continue
             else:
-                if not device.primary_ip6.dns_name:
-                    self.log_warning(device, "Primary IPv6 missing DNS name")
-                    continue
+                if (device.name in NO_V6_DEVICE_NAMES
+                        or any(re.match(fr"{name}[1-9]", device.name) for name in NO_V6_DEVICE_NAME_PREFIXES)):
+                    if device.primary_ip6.dns_name:
+                        self.log_warning(
+                            device, "Primary IPv6 has DNS name on a cluster that is listed as not supporting IPv6")
+                        continue
+                else:
+                    if not device.primary_ip6.dns_name:
+                        self.log_failure(device, "Primary IPv6 missing DNS name")
+                        continue
             success += 1
         self.log_success(None, "{} devices with operationnal primary IPv6".format(success))
 
