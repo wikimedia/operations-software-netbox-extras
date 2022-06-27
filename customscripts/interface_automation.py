@@ -615,6 +615,7 @@ class Importer:
             z_nbiface.tagged_vlans.set(tagged_vlans)
         else:
             z_nbiface.mode = 'access'
+        z_nbiface.mtu = 9192
         z_nbiface.untagged_vlan = vlan
         z_nbiface.enabled = True
         z_nbiface.save()
