@@ -43,7 +43,7 @@ ALL_TABLES = {
     "virtualization.virtual_machines.custom_fields",
     "virtualization.clusters",
     "virtualization.cluster_types",
-    "virtualization.cluster_groups",
+    # "virtualization.cluster_groups",  # Temporarily disabled as the current pynetbox fails with the custom field
     "circuits.circuits",
     "circuits.circuit_types",
     "circuits.providers",
