@@ -43,7 +43,6 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "graphite",
     "kafka-logging",
     "logstash",
-    "lvs",
     "maps",
     "mc",
     "mc-gp",
