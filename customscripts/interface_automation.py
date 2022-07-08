@@ -440,15 +440,24 @@ class Importer:
         if nbcable is None:
             self._create_cable(nbiface, z_nbiface, label=label)
 
-    def _make_interface_vm(self, device, iface, iface_dict, mtu):
+    def _get_parent_interface(self, device, iface):
+        """Returns the matching parent interface if any."""
+        if '.' in iface:
+            try:
+                return Interface.objects.get(name=iface.split('.')[0], device=device)
+            except Interface.DoesNotExist:
+                return None
+
+    def _make_interface_vm(self, device, iface, mtu):
         # only set MTU if it is non-default and not a loopback
         nbiface = VMInterface(name=iface,
                               virtual_machine=device,
-                              mtu=mtu)
+                              mtu=mtu,
+                              parent=self._get_parent_interface(device, iface))
         nbiface.save()
         return nbiface
 
-    def _make_interface(self, device, iface, iface_dict, net_driver, is_vdev, mtu):
+    def _make_interface(self, device, iface, net_driver, is_vdev, mtu):
         # this is the default 'type' for the device
         iface_fmt = InterfaceTypeChoices.TYPE_1GE_FIXED
         if is_vdev:
@@ -463,7 +472,8 @@ class Importer:
                             mgmt_only=False,
                             device=device,
                             type=iface_fmt,
-                            mtu=mtu)
+                            mtu=mtu,
+                            parent=self._get_parent_interface(device, iface))
         nbiface.save()
         return nbiface
 
@@ -480,7 +490,8 @@ class Importer:
                     device_interface.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
                 device_interface.save()
                 self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {device_interface.name}")
-        for iface, iface_dict in networking["interfaces"].items():
+        # Sorted dict to avoid race condition when finding a potential parent
+        for iface, iface_dict in dict(sorted(networking["interfaces"].items())).items():
             is_vdev = ((":" in iface) or ("." in iface) or ("lo" == iface))
             is_anycast = (iface.startswith("lo:anycast"))
             if any(r.match(iface) for r in INTERFACE_IMPORT_BLOCKLIST_RE):
@@ -497,9 +508,9 @@ class Importer:
                     if "mtu" in iface_dict and iface_dict["mtu"] != 1500 and iface != "lo":
                         mtu = iface_dict["mtu"]
                     if is_vm:
-                        nbiface = self._make_interface_vm(device, iface, iface_dict, mtu)
+                        nbiface = self._make_interface_vm(device, iface, mtu)
                     else:
-                        nbiface = self._make_interface(device, iface, iface_dict, net_driver, is_vdev, mtu)
+                        nbiface = self._make_interface(device, iface, net_driver, is_vdev, mtu)
 
             # FIXME /32 bug things here
             vipexempt = any([r.match(device.name) for r in NO_VIP_RE])
