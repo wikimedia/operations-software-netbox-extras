@@ -420,11 +420,15 @@ class Importer:
             if nbcable is not None:
                 self.log_success(f"{nbiface.device}: Remove cable from {nbiface}")
                 nbcable.delete()
-                nbcable = None
+                # After deleting the cable refresh the interface, otherwise
+                # nbiface.cable still returns the old cable
+                nbiface.refresh_from_db()
             if z_nbcable is not None:
                 self.log_success(f"{z_nbiface.device}: remove cable from {z_nbiface}")
                 z_nbcable.delete()
-                z_nbcable = None
+                # After deleting the cable refresh the interface, otherwise
+                # z_nbiface.cable still returns the old cable
+                z_nbiface.refresh_from_db()
         elif nbcable is not None:
             # If they match and are not None, we still need to check if the cable ID is good
             if label and nbcable.label != label:
@@ -975,6 +979,9 @@ class MoveServer(Script, Importer):
 
         # Remove the old cable
         nbcable.delete()
+        # After deleting the cable refresh the interface, otherwise
+        # nbiface.cable still returns the old cable
+        nbiface.refresh_from_db()
         self.log_success(f"{device}: deleted old cable.")
 
         # Create the new one
