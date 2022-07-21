@@ -413,7 +413,7 @@ def main() -> None:
     cfg.read(args.config)
     logger.info('Loaded %s configuration', args.config)
 
-    session = wmflib_http_session(Path(__file__).name)
+    session = wmflib_http_session(Path(__file__).name, timeout=(3, 15))
     session.verify = cfg['auth']['ca_cert']
 
     profile_config = cfg[f'profile:{args.profile}']
