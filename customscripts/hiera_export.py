@@ -4,7 +4,7 @@ import json
 from typing import Dict, List
 
 from dcim.choices import DeviceStatusChoices
-from dcim.models import Device
+from dcim.models import Device, Interface
 from virtualization.choices import VirtualMachineStatusChoices
 from virtualization.models import VirtualMachine
 
@@ -20,6 +20,10 @@ VM_EXCLUDE_STATUSES = (
     VirtualMachineStatusChoices.STATUS_DECOMMISSIONING,
     VirtualMachineStatusChoices.STATUS_OFFLINE,
     VirtualMachineStatusChoices.STATUS_PLANNED,
+)
+MGMT_EXCLUDE_STATUSES = (
+    DeviceStatusChoices.STATUS_OFFLINE,
+    DeviceStatusChoices.STATUS_PLANNED,
 )
 
 
@@ -67,15 +71,47 @@ class HieraExport(Script):
                     hosts[device.name]['location']['ganeti_cluster'] = device.cluster.group.name
         return hosts
 
+    @staticmethod
+    def _generate_mgmt(interfaces: List[Interface]) -> Dict:
+        """Generate the list of management interfaces
+
+        Arguments:
+            devices (List[Interface]): a list of netbox interfaces
+
+        Returns:
+            dict: a dictionary of values for hiera
+
+        """
+        res = {}
+
+        for interface in interfaces:
+            device = interface.device
+            if device.status in MGMT_EXCLUDE_STATUSES:
+                continue
+            if interface.count_ipaddresses < 1:
+                continue
+
+            address = interface.ip_addresses.first()
+            data = {
+                'row': device.rack.location.slug,
+                'rack': device.rack.name,
+                'site': device.site.slug,
+            }
+            res[address.dns_name] = data
+
+        return res
+
     def run(self, data: Dict, commit: bool) -> str:
         """Required by netbox"""
         # pylint: disable=unused-argument
-        results = {'hosts': {}}
+        results = {'hosts': {}, 'common': {'mgmt': {}}}
         hw_devices = Device.objects.filter(
             device_role__slug="server", tenant__isnull=True
         ).exclude(status__in=HW_EXCLUDE_STATUSES)
         vm_devices = VirtualMachine.objects.filter(tenant__isnull=True).exclude(
             status__in=VM_EXCLUDE_STATUSES)
+        mgmt_interfaces = Interface.objects.filter(mgmt_only=True)
         results['hosts'].update(self._generate_hosts(hw_devices))
         results['hosts'].update(self._generate_hosts(vm_devices))
+        results['common']['mgmt'].update(self._generate_mgmt(mgmt_interfaces))
         return json.dumps(results)
