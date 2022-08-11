@@ -119,7 +119,7 @@ class Importer:
         try:
             ipaddr = IPAddress.objects.get(address=str(address))
         except ObjectDoesNotExist:
-            self.log_info(f"Creating {address}")
+            self.log_info(f"Creating {address} and assigning to interface '{nbiface.name}'")
             ipaddr = IPAddress(address=str(address),
                                assigned_object=nbiface, role=role)
             ipaddr.save()
@@ -241,13 +241,13 @@ class Importer:
             self.log_warning(f"{address}: skipping SLAAC IP")
             return None
 
-        if (vip_exempt):
+        if vip_exempt:
             # FIXME
             # this is a bug in our deployment of certain servers where some service addresses have
             # an incorrect netmask and aren't actually VIPs
             # figure out the actual netmask from the prefix
             prefixq = PrefixFilterSet().search_contains(Prefix.objects.all(), "", str(address))
-            if (not prefixq):
+            if not prefixq:
                 self.log_failure(f"Can't find matching prefix for {address} when fixing netmask!")
                 return None
             realnetmask = max([i.prefix.prefixlen for i in prefixq])
@@ -266,9 +266,9 @@ class Importer:
         role = "anycast" if is_anycast else "vip"
         try:
             ipaddrs = IPAddress.objects.filter(address=str(address))
-            if (ipaddrs.count() > 1):
+            if ipaddrs.count() > 1:
                 self.log_debug(f"{address} has multiple results, taking the 0th one")
-            elif (ipaddrs.count() == 0):
+            elif ipaddrs.count() == 0:
                 raise ObjectDoesNotExist()
             ipaddr = ipaddrs[0]
             if ipaddr.role != role or ipaddr.assigned_object is not None or ipaddr.status != "active":
@@ -370,34 +370,33 @@ class Importer:
             'et-': InterfaceTypeChoices.TYPE_25GE_SFP28,
         }.get(iface_name[0:3], InterfaceTypeChoices.TYPE_1GE_FIXED)
 
-    def _update_z_vlan(self, lldp_iface, z_nbiface):
-        """Sets the proper vlan info on a remote LLDP interface when needed."""
-        # Now update the port vlan config if needed
-        mode = lldp_iface['vlans']['mode']
-        if mode == 'tagged-all':
-            mode = 'tagged'
-        nb_tagged_vlans = []
-        if 'tagged_vlans' in lldp_iface['vlans']:
-            for vlan_tag in lldp_iface['vlans']['tagged_vlans']:
-                # TODO unlikely to happen as we use unique access vlan VID (tag),
-                # but this will fail if two vlans have the same VID (tag)
-                nb_tagged_vlans.append(VLAN.objects.get(vid=vlan_tag))
-        nb_untagged_vlan = None
-        if 'untagged_vlan' in lldp_iface['vlans']:
-            nb_untagged_vlan = VLAN.objects.get(vid=lldp_iface['vlans']['untagged_vlan'])
+    def _update_z_vlan(self, device_interface):
+        """ Update switch-port vlans if they don't match those on host """
+        if not (device_interface.mode and device_interface.connected_endpoint):
+            return
 
-        changed = False
-        if z_nbiface.mode != mode:
-            z_nbiface.mode = mode
-            changed = True
-        if z_nbiface.untagged_vlan != nb_untagged_vlan:
-            z_nbiface.untagged_vlan = nb_untagged_vlan
-            changed = True
-        if list(z_nbiface.tagged_vlans.all()) != nb_tagged_vlans:
-            z_nbiface.tagged_vlans.set(nb_tagged_vlans)
-            changed = True
-        if changed:
-            self.log_success(f"{z_nbiface.device}: updating vlans for interface {z_nbiface}")
+        z_nbiface = device_interface.connected_endpoint
+        int_changed = False
+        if not z_nbiface.mode:
+            z_nbiface.mode = device_interface.mode
+            int_changed = True
+            self.log_info(f"Set {z_nbiface.device.name} {z_nbiface.name} mode to "
+                          f"{z_nbiface.mode} matching {device_interface.name}")
+
+        if device_interface.untagged_vlan != z_nbiface.untagged_vlan:
+            z_nbiface.untagged_vlan = device_interface.untagged_vlan
+            int_changed = True
+            self.log_info(f"Set {z_nbiface.device.name} {z_nbiface.name} untagged vlan to "
+                          f"{z_nbiface.untagged_vlan} matching {device_interface.name}")
+
+        tagged_vlans = list(device_interface.tagged_vlans.all())
+        if tagged_vlans != list(z_nbiface.tagged_vlans.all()):
+            z_nbiface.tagged_vlans.set(tagged_vlans)
+            int_changed = True
+            self.log_info(f"Set {z_nbiface.device.name} {z_nbiface.name} tagged vlans to "
+                          f"{tagged_vlans} matching {device_interface.name}")
+
+        if int_changed:
             z_nbiface.save()
 
     def _update_cable(self, lldp_iface, nbiface, z_nbiface):
@@ -439,20 +438,33 @@ class Importer:
         if nbcable is None:
             self._create_cable(nbiface, z_nbiface, label=label)
 
-    def _get_parent_interface(self, device, iface):
-        """Returns the matching parent interface if any."""
-        if '.' in iface:
-            try:
-                return Interface.objects.get(name=iface.split('.')[0], device=device)
-            except Interface.DoesNotExist:
-                return None
+    def _get_parent_interface(self, device, int_puppet_facts, parent_type):
+        """Returns the matching parent interface if any. parent_type can be 'parent_link'
+           (for vlan sub-int parent physical), or 'parent_bridge' (for bridge member parent
+           bridge).
+
+            Inputs:
+                device:      netbox device object the interface belongs to
+                int_puppet_facts:  puppetdb networking facts for the specific interface
+                parent_type: either 'parent_link' if we want to fetch the netbox interface's
+                             associated (sub-int) 'parent' interface, or 'parent_bridge' if we
+                             want to fetch the netbox interface's associated 'bridge' interface.
+
+            Returns:
+                Netbox interface object of requested type, or None if iface has no assocaited
+                interface of that type.
+        """
+        try:
+            return Interface.objects.get(name=int_puppet_facts[parent_type], device=device)
+        except (Interface.DoesNotExist, KeyError):
+            return None
 
     def _make_interface_vm(self, device, iface, mtu):
         # only set MTU if it is non-default and not a loopback
         nbiface = VMInterface(name=iface,
                               virtual_machine=device,
-                              mtu=mtu,
-                              parent=self._get_parent_interface(device, iface))
+                              mtu=mtu)
+
         nbiface.save()
         return nbiface
 
@@ -471,10 +483,118 @@ class Importer:
                             mgmt_only=False,
                             device=device,
                             type=iface_fmt,
-                            mtu=mtu,
-                            parent=self._get_parent_interface(device, iface))
+                            mtu=mtu)
+
         nbiface.save()
         return nbiface
+
+    def _update_int_relations(self, device, nbiface, int_puppet_facts):
+        """ Sets or updates interface link parents, bridge membership and vlan settings
+            as required
+
+            Inputs:
+                device: Netbox device object
+                nbiface: Netbox interface object
+                int_puppet_facts: puppetdb networking facts for the specific interface
+
+            Returns: None
+        """
+
+        # Create attachment to related interfaces
+        for parent_type in ['bridge', 'link']:
+            parent = self._get_parent_interface(device, int_puppet_facts, f'parent_{parent_type}')
+            # What we call parent_link in puppetdb, NB calls parent
+            nb_parent_type = 'parent' if parent_type == 'link' else parent_type
+            if getattr(nbiface, nb_parent_type, None) != parent:
+                setattr(nbiface, nb_parent_type, parent)
+                self.log_info(f"Attach interface {nbiface.name} to {parent_type} {parent.name}")
+
+        # If it's a special type of int set type
+        if "kind" in int_puppet_facts:
+            if int_puppet_facts['kind'] == "vlan":
+                # Make sure it's virtual and access vlan set on it, plus tagged on its parent
+                nbiface.type = InterfaceTypeChoices.TYPE_VIRTUAL
+                self._set_subint_vlan(nbiface, int_puppet_facts)
+            elif int_puppet_facts['kind'] == "bridge" and nbiface.type != InterfaceTypeChoices.TYPE_BRIDGE:
+                nbiface.type = InterfaceTypeChoices.TYPE_BRIDGE
+                self.log_info(f"Set interface '{nbiface.name}' to type bridge.")
+
+        nbiface.save()
+
+    def _set_subint_vlan(self, nbiface, int_puppet_facts):
+        """ Sets 802.1q sub-int and parent int mode, adds vlan to list for both.
+
+            Sub-interfaces are set to type 'access', with the access vlan set.
+            Parents are set to type 'trunk' (if not already), and vlan from sub-int is
+            added to its 'tagged_vlans'.
+
+            Inputs:
+                nbiface:    netbox interface object
+                int_puppet_facts: puppetdb networking facts for the specific interface
+        """
+        try:
+            subint_vlan = VLAN.objects.get(vid=int_puppet_facts['dot1q'], site=nbiface.device.site.id)
+        except ObjectDoesNotExist:
+            self.log_warning(f"Configured Vlan ID {int_puppet_facts['dot1q']} on {nbiface.name} not found in Netbox")
+            return
+
+        # Set subint parent to tagged mode if required, and add vlan for this subint to it
+        if nbiface.parent.mode != "tagged":
+            self._make_interface_tagged(nbiface.parent)
+        nbiface.parent.tagged_vlans.add(subint_vlan.id)
+        nbiface.parent.save()
+        self.log_info(f"Added vlan {int_puppet_facts['dot1q']} to {nbiface.parent.name} tagged vlans")
+        # Set correct untagged vlan for this sub-int
+        nbiface.mode = "access"
+        nbiface.untagged_vlan_id = subint_vlan.id
+        self.log_info(f"Set vlan {int_puppet_facts['dot1q']} as untagged vlan on {nbiface.name}")
+
+    def _make_interface_tagged(self, nbiface):
+        """ Sets netbox interface mode to 'tagged'.
+
+            Where the interface has an IP address directly connected we find the vlan associated
+            with that IP and set it as the untagged vlan for the interface.
+
+            Inputs:
+                nbiface: netbox interface object
+        """
+        nbiface.mode = 'tagged'
+        # Set untagged_vlan based on interface IP if present
+        if nbiface.bridge:
+            # If interface is a bridge member it should have no IPs, they'll instead be bound to bridge
+            int_ips = list(nbiface.bridge.ip_addresses.all())
+        else:
+            int_ips = list(nbiface.ip_addresses.filter())
+        if int_ips:
+            int_ip = int_ips[0].address
+            parent_prefix = Prefix.objects.get(prefix=f"{int_ip.network}/{int_ip.prefixlen}")
+            nbiface.untagged_vlan_id = parent_prefix.vlan.id
+        # Save here as that's required before tagged_vlans can be set
+        nbiface.save()
+
+    def _get_ordered_ints(self, interfaces):
+        """ Interates over interface names from Puppet data, and returns list of them
+            in order that is required for Netbox addition.  Specifically bridges need to
+            be added first, then vlan sub-int parents, then the rest.
+
+            Inputs:
+                interfaces: puppetdb networking facts for all the device interfaces
+
+            Returns:
+                int_names:  list of interface names in the order they need to be processed
+        """
+        # Iterate over ints, add bridges to int_names, and record vlan_parents
+        int_names = []
+        vlan_parents = set()
+        for iface_name, iface_facts in interfaces.items():
+            if iface_facts.get('kind', '') == "bridge":
+                int_names.append(iface_name)
+            if "parent_link" in iface_facts:
+                vlan_parents.add(iface_facts['parent_link'])
+        # Append first the vlan parents then remaining ints to list and return
+        int_names = int_names + list(vlan_parents)
+        int_names = int_names + [name for name in interfaces.keys() if name not in int_names]
+        return int_names
 
     def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_vm=False):
         """Resolve one device's interfaces and ip addresses based on a net_driver, networking and lldp dictionary
@@ -483,16 +603,29 @@ class Importer:
 
         for device_interface in device.interfaces.all():
             # Clean up potential ##PRIMARY## interfaces
-            if device_interface.name == '##PRIMARY##' and 'primary' in networking:
-                device_interface.name = networking['primary']
-                if ((not is_vm) and (net_driver[networking['primary']]["speed"] == 10000)):
-                    device_interface.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
+            if device_interface.name == PRIMARY_IFACE_NAME and 'primary' in networking:
+                primary_int_name = networking['primary']
+                if networking['interfaces'][primary_int_name].get('kind', '') == 'bridge':
+                    # If puppet primary int is a bridge, find the attached physical instead
+                    for iface_name, iface_detail in networking['interfaces'].items():
+                        if (iface_detail.get('parent_bridge', '') == primary_int_name
+                                and lldp.get(iface_name, {}).get('router', False)):
+                            primary_int_name = iface_name
+                            break
+
+                device_interface.name = primary_int_name
+                if not is_vm:
+                    if net_driver[primary_int_name]["speed"] == 10000:
+                        device_interface.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
                 device_interface.save()
                 self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {device_interface.name}")
-        # Sorted dict to avoid race condition when finding a potential parent
-        for iface, iface_dict in dict(sorted(networking["interfaces"].items())).items():
+
+        # Import in correct order so parents added before children
+        ordered_ints = self._get_ordered_ints(networking['interfaces'])
+        for iface in ordered_ints:
+            int_puppet_facts = networking['interfaces'][iface]
             is_vdev = ((":" in iface) or ("." in iface) or ("lo" == iface))
-            is_anycast = (iface.startswith("lo:anycast"))
+            is_anycast = iface.startswith("lo:anycast")
             if any(r.match(iface) for r in INTERFACE_IMPORT_BLOCKLIST_RE):
                 # don't create interfaces for blocklisted iface, but we still want to process
                 # their IP addresses.
@@ -504,17 +637,20 @@ class Importer:
                     self.log_info(f"Creating interface {iface} for device {device}")
                     # only set MTU if it is non-default and not a loopback
                     mtu = None
-                    if "mtu" in iface_dict and iface_dict["mtu"] != 1500 and iface != "lo":
-                        mtu = iface_dict["mtu"]
+                    if int_puppet_facts.get(mtu, 1500) != 1500 and iface != "lo":
+                        mtu = int_puppet_facts["mtu"]
                     if is_vm:
                         nbiface = self._make_interface_vm(device, iface, mtu)
                     else:
                         nbiface = self._make_interface(device, iface, net_driver, is_vdev, mtu)
 
+                # Update interface parent, bridge and set vlans if needed
+                self._update_int_relations(device, nbiface, int_puppet_facts)
+
             # FIXME /32 bug things here
             vipexempt = any([r.match(device.name) for r in NO_VIP_RE])
             # process ipv4 addresses
-            for binding in iface_dict.get('bindings', []):
+            for binding in int_puppet_facts.get('bindings', []):
                 address = self._process_binding_address(binding, False, is_anycast, (vipexempt and not is_vdev))
                 if address is None:
                     continue
@@ -523,7 +659,7 @@ class Importer:
                 is_primary = (iface == networking['primary'] and str(address.ip) == networking['ip'])
                 self._assign_ip_to_interface(address, nbiface, networking, iface, is_primary, False)
             # process ipv6 addresses
-            for binding in iface_dict.get('bindings6', []):
+            for binding in int_puppet_facts.get('bindings6', []):
                 address = self._process_binding_address(binding, True, is_anycast, (vipexempt and not is_vdev))
                 if address is None:
                     continue
@@ -549,23 +685,22 @@ class Importer:
                     z_nbiface.save()
                     self.log_info(f"Updated {z_nbiface.device.name} {z_nbiface.name} MTU to 9192")
 
-                # If possible, we create/update the vlans details
-                if 'vlans' in lldp[iface]:
-                    self._update_z_vlan(lldp[iface], z_nbiface)
+                # Create or update the cable if devices not already connected
+                if not (nbiface.connected_endpoint and nbiface.connected_endpoint == z_nbiface):
+                    self._update_cable(lldp[iface], nbiface, z_nbiface)
 
-                # Now we create or update the cable
-                self._update_cable(lldp[iface], nbiface, z_nbiface)
-
-        # Now we can clean up all of the interfaces that are no longer present in PuppetDB.
+        # Once all interfaces have been added to the device we can clean up any inconsistencies.
         for device_interface in device.interfaces.all():
+            # Update switch-port vlans if they don't match those on host
+            self._update_z_vlan(device_interface)
+
+            # Remove any netbox interfaces that aren't in puppet facts if it's safe
             if (device_interface.name not in networking["interfaces"]
                and device_interface.name not in ("mgmt", "##PRIMARY##")):
-                # clean up interface if there are no IPs assigned, and there are no caebles connected
-                device_iface_ct = ContentType.objects.get_for_model(device_interface)
-                ipcount = IPAddress.objects.filter(assigned_object_id=device_interface.id,
-                                                   assigned_object_type=device_iface_ct).count()
-                if ipcount == 0 and ((hasattr(device_interface, 'cable') and device_interface.cable is None)
-                                     or hasattr(device_interface, 'virtual_machine')):
+                # clean up interface if there are no IPs assigned, and there are no cables connected
+                if device_interface.count_ipaddresses == 0 and (
+                        (hasattr(device_interface, 'cable') and device_interface.cable is None)
+                        or hasattr(device_interface, 'virtual_machine')):
                     self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}")
                     device_interface.delete()
                 else:
@@ -584,10 +719,6 @@ class Importer:
             return False
 
         return True
-
-    def _validate_vm(self, device):
-        """Check if the virtual machine is OK for import."""
-        return True  # Try to import VMs in any state if the data is provided.
 
     def _create_cable(self, nbiface, z_nbiface, label=''):
         """Create a cable between two interfaces."""
@@ -665,12 +796,13 @@ class ImportNetworkFacts(Script, Importer):
 
     def _is_invalid_facts(self, facts):
         """We can very validate facts beyond this level, things will just explode if the facts are incorrect however."""
-        if ("networking" not in facts):
+        if "networking" not in facts:
             self.log_failure(f"Can't find `networking` in facts JSON."
                              f"Keys in blob are: {list(facts.keys())}")
             return True
-        if ("net_driver" not in facts):
+        if "net_driver" not in facts:
             self.log_warning("Can't find `net_driver` in facts JSON. Using default speed for all interfaces.")
+            return True
 
     def run(self, data, commit):
         """Execute script as per Script interface."""
@@ -686,8 +818,6 @@ class ImportNetworkFacts(Script, Importer):
         except ObjectDoesNotExist:
             try:
                 device = VirtualMachine.objects.get(name=data["device"])
-                if ((not data["statusoverride"]) and (not self._validate_vm(device))):
-                    return ""
                 is_vm = True
             except ObjectDoesNotExist:
                 self.log_failure(f"Not devices found by the name {data['device']}")
@@ -811,7 +941,7 @@ class ProvisionServerNetworkCSV(Script):
 
     class Meta:
         name = "Provision multiple servers network attributes from a CSV"
-        description = ("More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan.")
+        description = "More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan."
         commit_default = False
 
     csv_file = FileVar(
@@ -878,7 +1008,7 @@ class ProvisionServerNetworkCSV(Script):
 class MoveServer(Script, Importer):
     class Meta:
         name = "Move a server within the same row"
-        description = ("More exactly: keep the same vlan and IP.")
+        description = "More exactly: keep the same vlan and IP."
         commit_default = False
 
     device = ObjectVar(
@@ -1015,7 +1145,7 @@ class ProvisionServerNetwork(Script, Importer):
 
     class Meta:
         name = "Provision a server's network attributes"
-        description = ("More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan.")
+        description = "More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan."
         commit_default = False
 
     device = ObjectVar(
