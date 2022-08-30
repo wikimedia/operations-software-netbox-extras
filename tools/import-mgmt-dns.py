@@ -216,7 +216,7 @@ def main():
     mgmt_by_host = {x[0]: x for x in records if x[1].startswith("mgmt") and not x[0].startswith("WMF")}
     mgmt_by_asset = {x[0]: x for x in records if x[1].startswith("mgmt") and x[0].startswith("WMF")}
 
-    api = pynetbox.api(url=netbox_api, token=netbox_token)
+    api = pynetbox.api(url=netbox_api, token=netbox_token, threading=True)
 
     return resolve_dns_with_netbox(api, mgmt_by_host, mgmt_by_asset, dry_run=args.dry_run)
 

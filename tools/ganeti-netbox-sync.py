@@ -425,7 +425,7 @@ def main() -> None:
         http_session=session,
     )
 
-    netbox_api = pynetbox.api(cfg['netbox']['api'], cfg['auth']['netbox_token'])
+    netbox_api = pynetbox.api(cfg['netbox']['api'], cfg['auth']['netbox_token'], threading=True)
     netbox_api.http_session = session
     netbox = NetboxClusterGroup(
         api=netbox_api,
