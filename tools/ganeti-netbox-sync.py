@@ -139,21 +139,11 @@ class NetboxClusterGroup(Netbox):
         """Initialize additional instance variables."""
         super().__post_init__()
         self.cluster_group = self.api.virtualization.cluster_groups.get(name=self.cluster_group_name)
+        if self.cluster_group is None:
+            raise RuntimeError(f'Cluster group {self.cluster_group_name} does not exist.'
+                               'It must be created on Netbox before running this script.')
         self.cluster_type_id = self.api.virtualization.cluster_types.get(name='Ganeti').id
         self.site_id = self.api.dcim.sites.get(slug=self.site).id
-
-    def ensure_exists(self) -> bool:
-        """Ensure the cluster group exists or create it if missing."""
-        if self.cluster_group is not None:
-            return False
-
-        data = {'name': self.cluster_group_name, 'slug': self.cluster_group_name.replace('.', '-')}
-        self.cluster_group = self._create_resource(
-            'cluster_group', self.api.virtualization.cluster_groups.create, data)
-        if not self.cluster_group:
-            raise RuntimeError(f'Failed to create cluster group {self.cluster_group_name}')
-
-        return True
 
     def get_clusters(self) -> Dict:
         """Return all clusters of the current cluster group."""
@@ -277,8 +267,6 @@ class GanetiNetboxSyncer:
 
     def sync(self) -> None:
         """Start the recursive sync of all resources."""
-        if self.netbox.ensure_exists():
-            self.actions['Cluster groups added'] += 1
         self.netbox_clusters = self.netbox.get_clusters()
         self.ganeti_groups = self.ganeti.get_groups()
         self.add_clusters()
