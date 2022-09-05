@@ -176,6 +176,9 @@ class NetboxClusterGroup(Netbox):
             operation = 'created'
             data.update({'type': self.cluster_type_id, 'site': self.site_id, 'group': self.cluster_group.id})
             cluster = self._create_resource('Cluster', self.api.virtualization.clusters.create, data)
+            if not cluster:
+                raise RuntimeError(
+                    f'Failed to create cluster {data["name"]} in cluster group {self.cluster_group_name}')
 
         return operation, NetboxCluster(api=self.api, cluster=cluster, dry_run=self.dry_run) if cluster else cluster
 
@@ -239,16 +242,18 @@ class NetboxCluster(Netbox):
 
     def create_vm(self, orig_data: Dict) -> Optional[pynetbox.core.response.Record]:
         """Create a VM with the given data and return a boolean that tells if it was created successfully."""
-        # TODO: remove once the migration to the new structure is completed
         existing = self.api.virtualization.virtual_machines.get(name=orig_data['name'])
-        if existing is None:
-            data = {key: value for key, value in orig_data.items() if key != 'primary_node'}
-            data.update({'cluster': self.cluster.id, 'platform': self.linux_id, 'role': self.server_id})
-            return self._create_resource('VM', self.api.virtualization.virtual_machines.create, data)
-        else:
+        if existing is not None:
             existing.cluster = self.cluster.id
             existing.save()
             return existing
+
+        data = {key: value for key, value in orig_data.items() if key != 'primary_node'}
+        data.update({'cluster': self.cluster.id, 'platform': self.linux_id, 'role': self.server_id})
+        vm = self._create_resource('VM', self.api.virtualization.virtual_machines.create, data)
+        if not vm:
+            raise RuntimeError(f'Failed to create VM {orig_data["name"]} in cluster {self.cluster}')
+        return vm
 
     def add_device(self, device: str) -> bool:
         """Add a physical device to the current cluster."""
