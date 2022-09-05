@@ -140,7 +140,7 @@ class NetboxClusterGroup(Netbox):
         super().__post_init__()
         self.cluster_group = self.api.virtualization.cluster_groups.get(name=self.cluster_group_name)
         if self.cluster_group is None:
-            raise RuntimeError(f'Cluster group {self.cluster_group_name} does not exist.'
+            raise RuntimeError(f'Cluster group {self.cluster_group_name} does not exist. '
                                'It must be created on Netbox before running this script.')
         self.cluster_type_id = self.api.virtualization.cluster_types.get(name='Ganeti').id
         self.site_id = self.api.dcim.sites.get(slug=self.site).id
