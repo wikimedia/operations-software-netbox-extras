@@ -130,7 +130,7 @@ class Netbox:
             token (str): the Netbox API token.
 
         """
-        self.api = pynetbox.api(url=url, token=token)
+        self.api = pynetbox.api(url=url, token=token, threading=True)
         self.api.http_session = http_session('netbox-extras.dns.generate_dns_snippets', timeout=900)
         self.devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
         self.devices[NO_DEVICE_NAME]['device'] = None
