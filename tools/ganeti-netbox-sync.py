@@ -116,7 +116,8 @@ class Netbox:
         name = data['name']
         logger.info('Creating %s %s with data: %s', resource, name, data)
         if self.dry_run:
-            return True
+            logger.info('Skip resource creation in DRY-RUN mode. The script will fail early.')
+            return None
 
         try:
             created = func(data)
