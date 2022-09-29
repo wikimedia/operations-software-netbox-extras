@@ -300,7 +300,7 @@ class ReverseRecord(RecordBase):
             tuple: the tuple representation.
 
         """
-        return tuple([int(i, 16) for i in self.pointer.split('.')[::-1]] + [self.hostname])  # type: ignore
+        return tuple([int(i, 16) for i in self.pointer.split('.')[::-1]] + [self.hostname])
 
 
 class ForwardRecord(RecordBase):
