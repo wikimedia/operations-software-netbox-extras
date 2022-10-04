@@ -13,7 +13,7 @@ from flask import Flask, abort, make_response
 application = app = Flask(__name__)  # flake8: disable=invalid-name
 
 ALLOWED_SCRIPTS = ('getstats.GetDeviceStats', 'hiera_export.HieraExport')
-TIMEOUT = 30
+TIMEOUT = 300
 
 
 @lru_cache(maxsize=None)
