@@ -35,6 +35,9 @@ MODEL_EXCLUDES = (
 
 INVENTORY_EXCLUDES = Q(name="FPM Board")
 
+INVENTORY_ROLES_EXCLUDES = ("license",)
+
+
 # These are very specific filters for devices that act incorrectly in LibreNMS. We should document them
 # here as well.
 #
@@ -172,6 +175,7 @@ class LibreNMS(Report):
             InventoryItem.objects.filter(device_id__in=parents)
             .exclude(serial__isnull=True)
             .exclude(serial="")
+            .exclude(role__slug__in=INVENTORY_ROLES_EXCLUDES)
             .exclude(INVENTORY_EXCLUDES)
         ):
             if (
