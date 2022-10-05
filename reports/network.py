@@ -153,7 +153,7 @@ class Network(Report):
 
         for interface in (Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)  # Network devices
                                            .exclude(cable__isnull=True)  # Ignore interfaces with no cables
-                                           .exclude(mtu__in=(9192, 9216))  # Ignore anything with the good MTU
+                                           .exclude(mtu=9192)  # Ignore anything with the good MTU
                                            .exclude(lag__isnull=False)  # Ignore LAG members
                                            .exclude(enabled=False)):  # Ignore disabled interfaces
 
