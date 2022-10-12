@@ -13,7 +13,7 @@ from dcim.models import Device
 from extras.reports import Report
 from virtualization.models import VirtualMachine
 
-VM_BLOCKLIST = ('d-i-test',)
+VM_BLOCKLIST = ()
 
 CONFIG_FILE = "/etc/netbox/reports.cfg"
 

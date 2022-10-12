@@ -15,7 +15,7 @@ import requests
 from wmflib.requests import http_session as wmflib_http_session
 
 
-NO_PUPPETDB_VMS = ('d-i-test',)
+NO_PUPPETDB_VMS = ()
 logger = logging.getLogger()
 
 
