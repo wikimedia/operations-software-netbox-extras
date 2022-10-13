@@ -24,6 +24,7 @@ VM_EXCLUDE_STATUSES = (
 MGMT_EXCLUDE_STATUSES = (
     DeviceStatusChoices.STATUS_OFFLINE,
     DeviceStatusChoices.STATUS_PLANNED,
+    DeviceStatusChoices.STATUS_DECOMMISSIONING,
 )
 
 
