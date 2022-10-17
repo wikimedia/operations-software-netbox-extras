@@ -27,13 +27,13 @@ def get_result(result_url, headers):
     """Accept a 'result' URL and busy wait until timeout for results"""
     start = time.time()
     while (time.time() < start + TIMEOUT):
+        time.sleep(0.2)
         result = requests.get(result_url, headers=headers)
         if not result.ok:
             return make_response(result.text, result.status_code)
         data = result.json()
         if data['data'] is not None:
             return data['data']['output']
-        time.sleep(0.05)
     return make_response("Timeout exceeded.", 500)
 
 
