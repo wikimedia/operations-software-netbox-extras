@@ -177,8 +177,9 @@ class Netbox:
                 logger.error('Unsupported assigned object type: %s', address.assigned_object_type)
                 continue
 
-            if name != NO_DEVICE_NAME and name not in self.devices:
-                logger.warning('Device %s of IP %s not in devices, skipping.', name, address)
+            if address.dns_name and name != NO_DEVICE_NAME and name not in self.devices:
+                logger.warning('Device %s of IP %s with DNS name %s not in devices, skipping.',
+                               name, address, address.dns_name)
                 continue
 
             if not address.dns_name:
