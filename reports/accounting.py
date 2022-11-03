@@ -35,13 +35,14 @@ class Accounting(Report):
         config.read(CONFIG_FILE)
 
         self.assets = self.get_assets_from_accounting(
-            config["service-credentials"], config["accounting"]["sheet_id"], config["accounting"]["range"],
+            config["service-credentials"], config["accounting"]["sheet_id"], config["accounting"]["include_range"],
+            config["accounting"]["exclude_range"]
         )
 
         return super().run(job_results)
 
     @staticmethod
-    def get_assets_from_accounting(creds, sheet_id, range):
+    def get_assets_from_accounting(creds, sheet_id, include_range, exclude_range):
         """Retrieve all assets from a specified Google Spreadsheet."""
         # initialize the credentials API
         creds = service_account.Credentials.from_service_account_info(
@@ -68,7 +69,7 @@ class Accounting(Report):
             sheet.values()
             .get(
                 spreadsheetId=sheet_id,
-                range=range,
+                range=include_range,
                 valueRenderOption="FORMULA",  # do not calculate formula values
                 dateTimeRenderOption="FORMATTED_STRING",
             )
@@ -77,6 +78,20 @@ class Accounting(Report):
         values = result.get("values", [])
         if not values:
             return values
+
+        # fetch the recycled ones now
+        recycled_result = (
+            sheet.values()
+            .get(
+                spreadsheetId=sheet_id,
+                range=exclude_range,
+                valueRenderOption="FORMULA",  # do not calculate formula values
+                dateTimeRenderOption="FORMATTED_STRING",
+            )
+            .execute()
+        )
+        recycled_values = recycled_result.get("values", [])
+        recycled_assets = [row[1].upper() for row in recycled_values[1:]]
 
         # ignore the first row, as it is the document header; the second row is
         # the header row, with column names, which we map here to our own names
@@ -117,10 +132,9 @@ class Accounting(Report):
                     del assets[serial]
                 continue
 
-            # TODO: we need to do the same with assets that are written off,
-            # but there is currently no support in the spreadsheet for that.
-            # We can do e.g. a separate line ("Recycled"), a separate column
-            # or a separate sheet; cross that bridge when we come to it.
+            # skip items that have been recycled
+            if asset_tag.upper() in recycled_assets:
+                continue
 
             # skip items we *explicitly* don't track, like e.g. hard disks
             if asset_tag.upper() == "WMFNA":
