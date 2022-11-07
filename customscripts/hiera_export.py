@@ -92,12 +92,18 @@ class HieraExport(Script):
             if interface.count_ipaddresses < 1:
                 continue
 
-            address = interface.ip_addresses.first()
+            # Tenant is not production, skip because puppet doesn't
+            # have much power there.
+            if device.tenant is not None:
+                continue
+
             data = {
                 'row': device.rack.location.slug,
                 'rack': device.rack.name,
                 'site': device.site.slug,
             }
+
+            address = interface.ip_addresses.first()
             res[address.dns_name] = data
 
         return res
