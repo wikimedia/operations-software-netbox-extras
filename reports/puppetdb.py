@@ -22,10 +22,11 @@ INCLUDE_ROLES = ("server",)
 
 # statuses that only warn for parity failures
 EXCLUDE_STATUSES = (
+    DeviceStatusChoices.STATUS_DECOMMISSIONING,
     DeviceStatusChoices.STATUS_INVENTORY,
     DeviceStatusChoices.STATUS_OFFLINE,
     DeviceStatusChoices.STATUS_PLANNED,
-    DeviceStatusChoices.STATUS_DECOMMISSIONING,
+    DeviceStatusChoices.STATUS_STAGED,
 )
 EXCLUDE_AND_FAILED_STATUSES = EXCLUDE_STATUSES + (DeviceStatusChoices.STATUS_FAILED,)
 DEVICE_QUERY = Device.objects.filter(device_role__slug__in=INCLUDE_ROLES, tenant__isnull=True)
@@ -112,7 +113,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
                 invalid_device = Device.objects.get(name=device)
                 self.log_failure(
                     invalid_device,
-                    ("Device is in PuppetDB but is {} in Netbox (should be Staged, Active or Failed)")
+                    ("Device is in PuppetDB but is {} in Netbox (should be Active or Failed)")
                     .format(invalid_device.get_status_display()),
                 )
             else:

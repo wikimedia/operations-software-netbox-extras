@@ -15,6 +15,7 @@ HW_EXCLUDE_STATUSES = (
     DeviceStatusChoices.STATUS_INVENTORY,
     DeviceStatusChoices.STATUS_OFFLINE,
     DeviceStatusChoices.STATUS_PLANNED,
+    DeviceStatusChoices.STATUS_STAGED,
 )
 VM_EXCLUDE_STATUSES = (
     VirtualMachineStatusChoices.STATUS_DECOMMISSIONING,

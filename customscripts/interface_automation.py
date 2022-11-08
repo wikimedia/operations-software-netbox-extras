@@ -34,7 +34,6 @@ IP_PTR_BLOCKLIST_RE = tuple()
 
 # Statuses that devices must be to import
 IMPORT_STATUS_ALLOWLIST = ("active",
-                           "staged",
                            "failed",
                            "planned")
 

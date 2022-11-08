@@ -119,7 +119,7 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
 class Netbox:
     """Class to manage all data from Netbox."""
 
-    NETBOX_DEVICE_STATUSES = ('active', 'planned', 'staged', 'failed', 'inventory')
+    NETBOX_DEVICE_STATUSES = ('active', 'planned', 'failed', 'inventory')
     NETBOX_DEVICE_MGMT_ONLY_STATUSES = ('inventory',)
 
     def __init__(self, url: str, token: str):

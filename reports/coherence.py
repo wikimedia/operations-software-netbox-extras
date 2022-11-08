@@ -126,6 +126,16 @@ class Coherence(Report):
         [self.log_warning(x, "malformed device name for inactive device") for x in warnings]
         self.log_success(None, "{} correctly formatted device names".format(success))
 
+    def test_no_staged_servers(self):
+        """No server device should be in staged status."""
+        devices = Device.objects.filter(device_role__slug="server", status=DeviceStatusChoices.STATUS_STAGED)
+        if not len(devices):
+            self.log_success(None, "No servers are in Staged status")
+            return
+
+        for device in devices:
+            self.log_failure(device, "invalid status Staged for server")
+
 
 class Rack(Report):
     description = "Several integrity/coherence checks against the rack related data."
