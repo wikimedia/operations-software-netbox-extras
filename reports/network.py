@@ -266,8 +266,7 @@ class Network(Report):
         Exception being management switches as we don't document them in core sites.
         """
         success = 0
-        for ipaddress in IPAddress.objects.filter(interface__name="mgmt", dns_name__isnull=False):
-
+        for ipaddress in IPAddress.objects.filter(interface__name="mgmt", dns_name__isnull=False).exclude(dns_name=""):
             tenant = ''
             if ipaddress.assigned_object.device.tenant and ipaddress.assigned_object.device.tenant.slug == "fr-tech":
                 tenant = "frack."
