@@ -132,7 +132,7 @@ class Netbox:
         """
         self.api = pynetbox.api(url=url, token=token, threading=True)
         self.api.http_session = http_session('netbox-extras.dns.generate_dns_snippets', timeout=900)
-        self.devices = defaultdict(lambda: {'addresses': set()})  # type: DefaultDict
+        self.devices: DefaultDict = defaultdict(lambda: {'addresses': set()})
         self.devices[NO_DEVICE_NAME]['device'] = None
         self.addresses = {}  # type: dict
         self.physical_interfaces = {}  # type: dict
@@ -595,7 +595,7 @@ def push(working_repo: git.Repo, sha1: str) -> int:
 
 def run_commit(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> Tuple[Optional[Dict], int]:
     """Generate and commit the DNS snippets."""
-    batch_status = None  # type: Optional[Dict[str, Any]]
+    batch_status: Optional[Dict[str, Any]] = None
     netbox = Netbox(config.get('netbox', 'api'), config.get('netbox', 'token_ro'))
     netbox.collect()
     records = Records(netbox, config.getint('dns_snippets', 'min_records'))
