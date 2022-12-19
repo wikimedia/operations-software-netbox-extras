@@ -13,8 +13,6 @@ from dcim.models import Device
 from extras.reports import Report
 from virtualization.models import VirtualMachine
 
-VM_BLOCKLIST = ()
-
 CONFIG_FILE = "/etc/netbox/reports.cfg"
 
 # slugs for roles which we care about
@@ -80,10 +78,7 @@ class VirtualMachines(Report, PuppetDBDataMixin):
         success = 0
         for vm in vms:
             if vm.name not in puppetdb_isvirtual:
-                if vm.name in VM_BLOCKLIST:
-                    self.log_warning(vm, "missing VM from PuppetDB (ignored)")
-                else:
-                    self.log_failure(vm, "missing VM from PuppetDB")
+                self.log_failure(vm, "missing VM from PuppetDB")
             elif not puppetdb_isvirtual[vm.name]:
                 self.log_failure(vm, "expected VM marked as Physical in PuppetDB")
             else:

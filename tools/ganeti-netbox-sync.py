@@ -14,8 +14,6 @@ import requests
 
 from wmflib.requests import http_session as wmflib_http_session
 
-
-NO_PUPPETDB_VMS = ()
 logger = logging.getLogger()
 
 
@@ -202,8 +200,7 @@ class NetboxCluster(Netbox):
     def puppetdb_import(self) -> None:
         """Execute PuppetDB import on any host that have the placeholder PRIMARY interface."""
         reimport = [str(iface.virtual_machine) for iface in
-                    self.api.virtualization.interfaces.filter(name='##PRIMARY##', cluster_id=self.cluster.id)
-                    if iface.virtual_machine.name not in NO_PUPPETDB_VMS]
+                    self.api.virtualization.interfaces.filter(name='##PRIMARY##', cluster_id=self.cluster.id)]
         if not reimport:
             return
 
