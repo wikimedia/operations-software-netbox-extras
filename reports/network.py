@@ -151,10 +151,12 @@ class Network(Report):
     def test_mtu(self):
         """Reports on interfaces not using our MTU standards."""
 
+        # frack ignored as they're not managed by Netbox.
         for interface in (Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)  # Network devices
                                            .exclude(cable__isnull=True)  # Ignore interfaces with no cables
                                            .exclude(mtu=9192)  # Ignore anything with the good MTU
                                            .exclude(lag__isnull=False)  # Ignore LAG members
+                                           .exclude(device__tenant__slug="fr-tech")  # Ignore frack devices
                                            .exclude(enabled=False)):  # Ignore disabled interfaces
 
             # Ignore interfaces not ultimately connected to a device
@@ -174,13 +176,13 @@ class Network(Report):
                     continue
                 # Report core links with different MTU on each side:
                 elif interface.connected_endpoint.mtu != interface.mtu:
-                    self.log_warning(interface, f"[{interface.device.site.slug}] MTU mismatch on link between "
+                    self.log_failure(interface, f"[{interface.device.site.slug}] MTU mismatch on link between "
                                                 f"{interface.device.name} ({interface.mtu}) and "
                                                 f"{z_device_name} ({interface.connected_endpoint.mtu})")
                     continue
 
                 # Report any other non-standard MTU
-                self.log_warning(interface, f"[{interface.device.site.slug}] {interface.device.name} core link with "
+                self.log_failure(interface, f"[{interface.device.site.slug}] {interface.device.name} core link with "
                                             f"invalid MTU ({interface.mtu})")
 
     def test_primary_ipv6(self):
