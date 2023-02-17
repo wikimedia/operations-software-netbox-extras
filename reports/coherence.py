@@ -1,188 +1,24 @@
 """Several integrity/coherence checks against the data."""
 
-import datetime
-import re
-
-from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 from extras.reports import Report
-
-from django.db.models import Count
-
-
-SITE_BLOCKLIST = ()
-DEVICE_ROLE_BLOCKLIST = ("cablemgmt", "storagebin", "optical-device", "patch-panel")
-ASSET_TAG_BLOCKLIST = ("patch-panel",)
-ASSET_TAG_RE = re.compile(r"WMF\d{4,}")  # Update the error message if you edit the regex
-TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
-INVALID_ACTIVE_NAMES = ["future", "spare"]
-
-
-def _get_devices_query():
-    devices = Device.objects.exclude(site__slug__in=SITE_BLOCKLIST)
-    return devices
-
-
-class Coherence(Report):
-    description = __doc__
-
-    def test_malformed_asset_tags(self):
-        """Test for missing asset tags and incorrectly formatted asset tags."""
-        success_count = 0
-        for device in _get_devices_query().exclude(device_role__slug__in=ASSET_TAG_BLOCKLIST):
-            if device.asset_tag is None:
-                self.log_failure(device, "missing asset tag")
-            elif not ASSET_TAG_RE.fullmatch(device.asset_tag):
-                self.log_failure(device, f"malformed asset tag: {device.asset_tag} (WMF then 4 or more digits)")
-            else:
-                success_count += 1
-        self.log_success(None, f"{success_count} correctly formatted asset tags")
-
-    def test_purchase_date(self):
-        """Test that each device has a purchase date."""
-        success_count = 0
-        for device in _get_devices_query():
-            purchase_date = device.cf["purchase_date"]
-            if purchase_date is None:
-                self.log_failure(device, "missing purchase date")
-            elif datetime.date.fromisoformat(purchase_date) > datetime.datetime.today().date():
-                self.log_failure(device, "purchase date is in the future")
-            else:
-                success_count += 1
-        self.log_success(None, f"{success_count} present purchase dates")
-
-    def test_duplicate_serials(self):
-        """Test that all serial numbers are unique."""
-        dups = (
-            _get_devices_query()
-            .values("serial")
-            .exclude(device_role__slug__in=DEVICE_ROLE_BLOCKLIST)
-            .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
-            .exclude(serial="")
-            .exclude(serial__isnull=True)
-            .annotate(count=Count("pk"))
-            .values_list("serial", flat=True)
-            .order_by()
-            .filter(count__gt=1)
-        )
-
-        if dups:
-            for device in (
-                _get_devices_query()
-                .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
-                .filter(serial__in=list(dups))
-                .order_by("serial")
-            ):
-                self.log_failure(device, f"duplicate serial: {device.serial}")
-        else:
-            self.log_success(None, "No duplicate serials found")
-
-    def test_serials(self):
-        """Determine if all serial numbers are non-null."""
-        success_count = 0
-        for device in (
-            _get_devices_query()
-            .exclude(status__in=(DeviceStatusChoices.STATUS_DECOMMISSIONING, DeviceStatusChoices.STATUS_OFFLINE))
-            .exclude(device_role__slug__in=DEVICE_ROLE_BLOCKLIST)
-        ):
-            if device.serial is None or device.serial == "":
-                self.log_failure(device, "missing serial number")
-            else:
-                success_count += 1
-        self.log_success(None, f"{success_count} present serial numbers")
-
-    def test_ticket(self):
-        """Determine if the procurement ticket matches the expected format."""
-        success_count = 0
-        for device in _get_devices_query():
-            ticket = str(device.cf["ticket"])
-            if TICKET_RE.fullmatch(ticket):
-                success_count += 1
-            elif device.cf["ticket"] is None:
-                self.log_failure(device, "missing procurement ticket")
-            else:
-                self.log_failure(device, f"malformed procurement ticket: {ticket}")
-
-        self.log_success(None, f"{success_count} correctly formatted procurement tickets")
-
-    def test_device_name(self):
-        """Device names should be lower case."""
-        success = 0
-        warnings = []
-        for device in _get_devices_query():
-            if device.name.lower() != device.name:
-                if device.status == DeviceStatusChoices.STATUS_ACTIVE:
-                    self.log_failure(device, "malformed device name for active device (should be lowercase)")
-                else:
-                    warnings.append(device)
-            elif (
-                any(x in device.name for x in INVALID_ACTIVE_NAMES)
-                and device.status == DeviceStatusChoices.STATUS_ACTIVE
-            ):
-                self.log_failure(device, "Future or spare in active device name")
-            else:
-                success += 1
-
-        [self.log_warning(x, "malformed device name for inactive device") for x in warnings]
-        self.log_success(None, f"{success} correctly formatted device names")
-
-    def test_no_staged_servers(self):
-        """No server device should be in staged status."""
-        devices = Device.objects.filter(device_role__slug="server", status=DeviceStatusChoices.STATUS_STAGED)
-        if not len(devices):
-            self.log_success(None, "No servers are in Staged status")
-            return
-
-        for device in devices:
-            self.log_failure(device, "invalid status Staged for server")
 
 
 class Rack(Report):
     description = "Several integrity/coherence checks against the rack related data."
 
-    def test_offline_rack(self):
-        """Determine if offline boxes are (erroneously) assigned a rack."""
-        devices = _get_devices_query().filter(status=DeviceStatusChoices.STATUS_OFFLINE).exclude(rack=None)
-        devices = devices.select_related("site", "rack")
-        for device in devices:
-            self.log_failure(
-                device,
-                "rack defined for status {status} device: {site}-{rack}".format(
-                    status="Offline", site=device.site.slug, rack=device.rack.name
-                ),
-            )
-
-    def test_online_rack(self):
-        """Determine if online boxes are (erroneously) lacking a rack assignment."""
-        for device in (
-            _get_devices_query()
-            .exclude(
-                status__in=(
-                    DeviceStatusChoices.STATUS_OFFLINE,
-                    DeviceStatusChoices.STATUS_PLANNED,
-                    DeviceStatusChoices.STATUS_INVENTORY,
-                )
-            )
-            .filter(rack=None)
-        ):
-            self.log_failure(device, f"no rack defined for status {device.get_status_display()} device")
-
     def test_connected_unracked(self):
         """Determine if unracked boxes still have console connections marked as conneced."""
-        for device in _get_devices_query().filter(rack=None):
+        for device in Device.objects.filter(rack=None):
+            # TODO all cables, not just console
             consoleports = device.consoleports.all()
             good = True
-            msgs = [f"connected console ports attached to unracked device {device.name}:"]
+            msgs = [
+                f"connected console ports attached to unracked device {device.name}:"
+            ]
             for port in consoleports:
                 if port.cable:
                     msgs.append(port.name)
                     good = False
             if not good:
                 self.log_failure(device, " ".join(msgs))
-
-    def test_rack_noposition(self):
-        """Report errors on devices that have no rack position."""
-        for device in _get_devices_query().filter(
-            device_type__u_height__gte=1, position__isnull=True, rack__isnull=False
-        ):
-            self.log_failure(device, "no position set for racked device with U height")

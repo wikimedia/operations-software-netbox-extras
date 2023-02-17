@@ -6,13 +6,16 @@ BLOCKLISTS:
 
 import re
 
-from collections import defaultdict
-
 from django.contrib.contenttypes.models import ContentType
 
-from dcim.choices import DeviceStatusChoices, LinkStatusChoices
-
-from dcim.models import Cable, ConsolePort, ConsoleServerPort, Interface, PowerPort, PowerOutlet
+from dcim.choices import DeviceStatusChoices
+from dcim.models import (
+    ConsolePort,
+    ConsoleServerPort,
+    Interface,
+    PowerPort,
+    PowerOutlet,
+)
 from extras.reports import Report
 
 # these are statuses for devices that we care about
@@ -40,9 +43,6 @@ INTERFACES_REGEXP = (
     r"^(public|private)$",  # ganeti interfaces
     r"^##PRIMARY##$",  # interface name placeholder
 )
-
-BLANK_CABLES_SITE_BLOCKLIST = ()
-CORE_SITES = ("eqiad", "codfw")
 
 interface_ct = ContentType.objects.get_for_model(Interface)
 
@@ -79,9 +79,14 @@ class Cables(Report):
                         ),
                     )
                 else:
-                    self.log_failure(cable.device, f"incorrectly named {label} cable termination: {cable.name}")
+                    self.log_failure(
+                        cable.device,
+                        f"incorrectly named {label} cable termination: {cable.name}",
+                    )
 
-        self.log_success(None, f"{successes} correctly named {label} cable terminations")
+        self.log_success(
+            None, f"{successes} correctly named {label} cable terminations"
+        )
 
     def test_console_port_termination_names(self):
         """Proxy to _port_names_test with values for checking console ports."""
@@ -110,96 +115,17 @@ class Cables(Report):
     def test_power_outlet_termination_names(self):
         """Proxy to _port_names_test with values for checking power outlets."""
         self._port_names_test(
-            PowerOutlet.objects.exclude(device__status__in=EXCLUDE_STATUSES), re.compile(r"\d+"), "power outlet"
+            PowerOutlet.objects.exclude(device__status__in=EXCLUDE_STATUSES),
+            re.compile(r"\d+"),
+            "power outlet",
         )
 
     def test_interface_termination_names(self):
         """Proxy to _port_names_test with values for checking interfaces."""
         self._port_names_test(
-            Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES).exclude(device__device_role__slug="server"),
+            Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES).exclude(
+                device__device_role__slug="server"
+            ),
             re.compile((r"|".join(INTERFACES_REGEXP))),
             "interface",
         )
-
-    def _get_site_slug_for_cable(self, cable):
-        """Get a representative site slug given a cable.
-
-        Since cables do not have their own site objects, we need to get it from a subsidiary object, which,
-        depending on the termination type, may be on the termination object or the device object in the termination.
-        """
-        site = "none"
-        if cable.termination_a_type.name == "circuit termination" and cable.termination_a.site:
-            site = cable.termination_a.site.slug
-        elif cable.termination_a.device and cable.termination_a.device.site:
-            site = cable.termination_a.device.site.slug
-        return site
-
-    def _core_site_server_cable(self, cable):
-        """Check if the cable is a core site server cable.
-
-        Arguments:
-            cable: Netbox cable
-
-        Returns:
-            true: the cable is a core site server cable.
-            false: it's not.
-
-        """
-        if (
-            cable.termination_a_type == interface_ct
-            and cable.termination_a.device.device_role.slug == "server"
-            and cable.termination_a.device.site.slug in CORE_SITES
-        ):
-            return True
-        if (
-            cable.termination_b_type == interface_ct
-            and cable.termination_b.device.device_role.slug == "server"
-            and cable.termination_b.device.site.slug in CORE_SITES
-        ):
-            return True
-        return False
-
-    def test_duplicate_cable_label(self):
-        """Cables within sites should have unique labels."""
-        labelcounts = defaultdict(list)
-        for cable in (
-            Cable.objects.exclude(label__isnull=True)
-            .exclude(label="")
-            .exclude(termination_a_id__isnull=True)
-            .exclude(termination_b_id__isnull=True)
-        ):
-            if cable.label.strip():
-                # Uniquify per site (duplicates between sites are ok, within sites not ok).
-                site = self._get_site_slug_for_cable(cable)
-                labelcounts[(cable.label.strip(), site)].append(cable)
-
-        success = 0
-        for label, cables in labelcounts.items():
-            if len(cables) > 1:
-                for cable in cables:
-                    self.log_failure(cable, f"duplicate cable label (site {label[1]})")
-            else:
-                success += 1
-        self.log_success(None, f"{success} non-duplicate cable labels")
-
-    def test_blank_cable_label(self):
-        """Cables should not have blank labels.
-
-        Except for core sites servers (see T266533).
-        """
-        success = 0
-        for cable in Cable.objects.filter(status=LinkStatusChoices.STATUS_CONNECTED):
-            if cable.label is None or not cable.label.strip():
-                site = self._get_site_slug_for_cable(cable)
-                if self._core_site_server_cable(cable):
-                    continue
-                if cable.termination_a_type == interface_ct and cable.termination_a.name.startswith("vcp-"):
-                    self.log_warning(cable, f"VC link with no cable ID (site {site})")
-                    continue
-                if site in BLANK_CABLES_SITE_BLOCKLIST:
-                    self.log_warning(cable, f"blank cable label (site {site})")
-                    continue
-                self.log_failure(cable, f"blank cable label (site {site})")
-            else:
-                success += 1
-        self.log_success(None, f"{success} non-blank cable labels")
