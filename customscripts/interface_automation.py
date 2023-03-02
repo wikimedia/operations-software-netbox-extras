@@ -542,6 +542,13 @@ class Importer:
                 # First we get or create the remote interface
                 z_nbiface = self._get_z_interface(lldp[iface])
 
+                # If nbiface already existed, or LLDP reports switch has 1514 MTU, nbiface.mtu may not be set,
+                # but as this is a L2 switch port we should set 9192 to avoid risk of lowering IRB MTU (T329535)
+                if not z_nbiface.mtu:
+                    z_nbiface.mtu = 9192
+                    z_nbiface.save()
+                    self.log_info(f"Updated {z_nbiface.device.name} {z_nbiface.name} MTU to 9192")
+
                 # If possible, we create/update the vlans details
                 if 'vlans' in lldp[iface]:
                     self._update_z_vlan(lldp[iface], z_nbiface)
