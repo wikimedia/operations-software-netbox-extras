@@ -1,0 +1,68 @@
+strictness: high
+inherits:
+  - strictness_high
+
+doc-warnings: true
+member-warnings: true
+test-warnings: true
+
+autodetect: false
+output-format: grouped
+
+profile-validator:
+  disable:
+    - deprecated-tool-code
+
+pep8:
+  full: true
+  options:
+    max-line-length: 120
+
+pep257:
+  explain: true
+  source: true
+  disable:
+    - D203  # 1 blank line required before class docstring, D211 (after) is enforce instead
+    - D213  # Multi-line docstring summary should start at the second line, D212 (first line) is enforced instead
+    - D406  # Section name should end with a newline, incompatible with Google Style Python Docstrings
+    - D407  # Missing dashed underline after section, incompatible with Google Style Python Docstrings
+    - D100  # Missing docstring, TODO to be re-enabled in the future
+    - D101  # Missing docstring, TODO to be re-enabled in the future
+    - D102  # Missing docstring, TODO to be re-enabled in the future
+    - D103  # Missing docstring, TODO to be re-enabled in the future
+    - D104  # Missing docstring, TODO to be re-enabled in the future
+    - D106  # Missing docstring, TODO to be re-enabled in the future
+    - D107  # Missing docstring, TODO to be re-enabled in the future
+    - D415  # First line should end with, TODO to be re-enabled in the future
+    - E231  # missing whitespace after, TODO to be re-enabled in the future
+
+pylint:
+  disable:
+    - import-error  # Custom scripts, reports and validators un in Netbox's venv
+    - missing-module-docstring # TODO to be re-enabled in the future
+    - missing-class-docstring # TODO to be re-enabled in the future
+    - missing-function-docstring # TODO to be re-enabled in the future
+    - too-many-boolean-expressions # TODO to be re-enabled in the future
+    - too-many-branches # TODO to be re-enabled in the future
+    - too-many-statements # TODO to be re-enabled in the future
+    - too-many-branches # TODO to be re-enabled in the future
+    - no-member # TODO to be re-enabled in the future
+    - protected-access # TODO to be re-enabled in the future
+  options:
+    max-line-length: 120
+    max-args: 7
+    max-attributes: 20
+    max-locals: 25
+    include-naming-hint: true
+    variable-rgx: (([a-z][a-z0-9_]{0,30})|(_[a-z0-9_]*))$
+    variable-name-hint: (([a-z][a-z0-9_]{0,30})|(_[a-z0-9_]*))$
+    extension-pkg-whitelist: lxml
+
+pyroma:
+  run: true
+
+vulture:
+  run: false
+
+mccabe:
+  run: false  # TODO to be re-enabled in the future
