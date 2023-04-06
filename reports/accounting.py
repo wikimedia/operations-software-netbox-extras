@@ -91,7 +91,7 @@ class Accounting(Report):
             .execute()
         )
         recycled_values = recycled_result.get("values", [])
-        recycled_serials = [row[0].upper() for row in recycled_values[1:]]
+        recycled_serials = [str(row[0]).upper() for row in recycled_values[1:] if row[0]]
 
         # ignore the first row, as it is the document header; the second row is
         # the header row, with column names, which we map here to our own names
