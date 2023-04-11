@@ -35,8 +35,10 @@ class Accounting(Report):
         config.read(CONFIG_FILE)
 
         self.assets = self.get_assets_from_accounting(
-            config["service-credentials"], config["accounting"]["sheet_id"], config["accounting"]["include_range"],
-            config["accounting"]["exclude_range"]
+            config["service-credentials"],
+            config["accounting"]["sheet_id"],
+            config["accounting"]["include_range"],
+            config["accounting"]["exclude_range"],
         )
 
         return super().run(job_results)
@@ -49,12 +51,7 @@ class Accounting(Report):
             creds, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
         )
         try:
-            proxy = urlparse(
-                configuration.HTTP_PROXIES.get(
-                    'https',
-                    configuration.HTTP_PROXIES['http']
-                )
-            )
+            proxy = urlparse(configuration.HTTP_PROXIES.get("https", configuration.HTTP_PROXIES["http"]))
             http = Http(proxy_info=ProxyInfo(PROXY_TYPE_HTTP, proxy.hostname, proxy.port))
         except (KeyError, AttributeError):
             # either no or badly formed HTTP_PROXIES
@@ -183,8 +180,8 @@ class Accounting(Report):
                 asset_tag_matches += 1
 
             netbox_ticket = None
-            if 'ticket' in device.cf:
-                netbox_ticket = device.cf['ticket']
+            if "ticket" in device.cf:
+                netbox_ticket = device.cf["ticket"]
 
             if ticket != netbox_ticket:
                 self.log_warning(

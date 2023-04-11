@@ -57,20 +57,20 @@ class HieraExport(Script):
             hosts[device.name] = {
                 # profile::netbox::host will load this data into netbox::host
                 # We can then make the data available via netbox::$functions
-                'location': {
-                    'site': device.site.slug,
+                "location": {
+                    "site": device.site.slug,
                 },
-                'status': device.status,
+                "status": device.status,
             }
             if isinstance(device, Device):
                 if device.rack:
-                    hosts[device.name]['location']['rack'] = device.rack.name
+                    hosts[device.name]["location"]["rack"] = device.rack.name
                     if device.rack.location:
-                        hosts[device.name]['location']['row'] = device.rack.location.slug
+                        hosts[device.name]["location"]["row"] = device.rack.location.slug
             if isinstance(device, VirtualMachine):
                 if device.cluster:
-                    hosts[device.name]['location']['ganeti_group'] = device.cluster.name
-                    hosts[device.name]['location']['ganeti_cluster'] = device.cluster.group.name
+                    hosts[device.name]["location"]["ganeti_group"] = device.cluster.name
+                    hosts[device.name]["location"]["ganeti_cluster"] = device.cluster.group.name
         return hosts
 
     @staticmethod
@@ -99,9 +99,9 @@ class HieraExport(Script):
                 continue
 
             data = {
-                'row': device.rack.location.slug,
-                'rack': device.rack.name,
-                'site': device.site.slug,
+                "row": device.rack.location.slug,
+                "rack": device.rack.name,
+                "site": device.site.slug,
             }
 
             address = interface.ip_addresses.first()
@@ -112,14 +112,13 @@ class HieraExport(Script):
     def run(self, data: Dict, commit: bool) -> str:
         """Required by netbox"""
         # pylint: disable=unused-argument
-        results = {'hosts': {}, 'common': {'mgmt': {}}}
-        hw_devices = Device.objects.filter(
-            device_role__slug="server", tenant__isnull=True
-        ).exclude(status__in=HW_EXCLUDE_STATUSES)
-        vm_devices = VirtualMachine.objects.filter(tenant__isnull=True).exclude(
-            status__in=VM_EXCLUDE_STATUSES)
+        results = {"hosts": {}, "common": {"mgmt": {}}}
+        hw_devices = Device.objects.filter(device_role__slug="server", tenant__isnull=True).exclude(
+            status__in=HW_EXCLUDE_STATUSES
+        )
+        vm_devices = VirtualMachine.objects.filter(tenant__isnull=True).exclude(status__in=VM_EXCLUDE_STATUSES)
         mgmt_interfaces = Interface.objects.filter(mgmt_only=True)
-        results['hosts'].update(self._generate_hosts(hw_devices))
-        results['hosts'].update(self._generate_hosts(vm_devices))
-        results['common']['mgmt'].update(self._generate_mgmt(mgmt_interfaces))
+        results["hosts"].update(self._generate_hosts(hw_devices))
+        results["hosts"].update(self._generate_hosts(vm_devices))
+        results["common"]["mgmt"].update(self._generate_mgmt(mgmt_interfaces))
         return json.dumps(results)

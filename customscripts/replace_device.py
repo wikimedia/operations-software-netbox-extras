@@ -3,12 +3,13 @@ from extras.scripts import BooleanVar, Script, ObjectVar
 
 
 class ReplaceDevice(Script):
-
     class Meta:
-        name = 'Move devices attributes'
-        description = ('Move all attributes (cables, etc) from one device to the other. '
-                       'To be used for RMAs and other in place replacement. '
-                       'Note that existing attributes on the new device will be deleted.')
+        name = "Move devices attributes"
+        description = (
+            "Move all attributes (cables, etc) from one device to the other. "
+            "To be used for RMAs and other in place replacement. "
+            "Note that existing attributes on the new device will be deleted."
+        )
         commit_default = False
 
     source_device = ObjectVar(
@@ -25,8 +26,10 @@ class ReplaceDevice(Script):
     )
     already_racked = BooleanVar(
         label="Already racked",
-        description=("The replacement device is already racked at its definitive location. "
-                     "If checked, the script does NOT touch racking, console and power."),
+        description=(
+            "The replacement device is already racked at its definitive location. "
+            "If checked, the script does NOT touch racking, console and power."
+        ),
     )
     move_inventory = BooleanVar(
         label="Move inventory items",
@@ -38,7 +41,7 @@ class ReplaceDevice(Script):
         try:
             self._run(data)
         except Exception as e:
-            self.log_failure('Failed to run script. {e}'.format(e=e))
+            self.log_failure(f"Failed to run script. {e}")
 
         return self._format_logs()
 
@@ -57,45 +60,37 @@ class ReplaceDevice(Script):
 
     def _run(self, data):
         """Actually run the script."""
-        source_device = data['source_device']
-        destination_device = data['destination_device']
+        source_device = data["source_device"]
+        destination_device = data["destination_device"]
         if source_device == destination_device:
-            self.log_error('Source and destination devices are the same')
+            self.log_error("Source and destination devices are the same")
             return
 
         destination_device.name = source_device.name
-        source_device.name = source_device.name + '-old'
-        source_device.status = 'decommissioning'
-        destination_device.status = 'active'
+        source_device.name = source_device.name + "-old"
+        source_device.status = "decommissioning"
+        destination_device.status = "active"
         destination_device.comments = destination_device.comments + " - Replaced " + str(source_device.asset_tag)
 
         # Direct device attributes that are set to None on the source after the swap
-        attributes = ['cluster',
-                      'virtual_chassis',
-                      'vc_position',
-                      'vc_priority',
-                      'primary_ip4',
-                      'primary_ip6']
-        if not data['already_racked']:
-            attributes.extend(['position'])
+        attributes = ["cluster", "virtual_chassis", "vc_position", "vc_priority", "primary_ip4", "primary_ip6"]
+        if not data["already_racked"]:
+            attributes.extend(["position"])
         self._copy_attributes(source_device, destination_device, attributes, remove_old=True)
 
         # Direct device attributes that are kept on the source after the swap
-        attributes = ['tenant']
-        if not data['already_racked']:
-            attributes.extend(['rack', 'face'])
+        attributes = ["tenant"]
+        if not data["already_racked"]:
+            attributes.extend(["rack", "face"])
         self._copy_attributes(source_device, destination_device, attributes)
 
         # Objects attributes with the device as primary key
-        attributes = ['interfaces',
-                      'consoleserverports',
-                      'poweroutlets']
+        attributes = ["interfaces", "consoleserverports", "poweroutlets"]
 
-        if not data['already_racked']:
-            attributes.extend(['powerports',
-                               'consoleports'])
-        if data['move_inventory']:
-            attributes.extend(['inventoryitems'])
+        if not data["already_racked"]:
+            attributes.extend(["powerports", "consoleports"])
+        if data["move_inventory"]:
+            attributes.extend(["inventoryitems"])
 
         for attribute in attributes:
             source_objects = getattr(source_device, attribute)
@@ -110,7 +105,7 @@ class ReplaceDevice(Script):
                 self.log_success(f"Moved {attribute} {object.name}")
 
                 # Fix for T259166#7868195
-                if hasattr(object, 'cable') and object.cable:
+                if hasattr(object, "cable") and object.cable:
                     if object.cable._termination_a_device == source_device:
                         object.cable._termination_a_device = destination_device
                         object.cable._termination_a_device_id = destination_device.id
@@ -130,6 +125,4 @@ class ReplaceDevice(Script):
 
     def _format_logs(self):
         """Return all log messages properly formatted."""
-        return "\n".join(
-            "[{level}] {msg}".format(level=level, msg=message) for level, message in self.log
-        )
+        return "\n".join(f"[{level}] {message}" for level, message in self.log)

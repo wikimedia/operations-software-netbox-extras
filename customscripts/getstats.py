@@ -25,7 +25,7 @@ def get_module(module):
     Returns:
         A string representing the module
     """
-    if module != '__main__':
+    if module != "__main__":
         return module
     return Path(sys.modules[module].__file__).stem
 
@@ -35,6 +35,7 @@ class GetDeviceStats(Script):
 
     class Meta:
         """Metadata"""
+
         name = "Get Device Statistics"
         description = "Dump a set of statistics about various devices for Prometheus."
 

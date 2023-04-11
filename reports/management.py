@@ -44,4 +44,4 @@ class ManagementConsole(Report):
                     break
             else:
                 self.log_failure(device, "missing connected console port")
-        self.log_success(None, "{} devices with connected ports".format(successcount))
+        self.log_success(None, f"{successcount} devices with connected ports")

@@ -12,7 +12,7 @@ from flask import Flask, abort, make_response
 
 application = app = Flask(__name__)  # flake8: disable=invalid-name
 
-ALLOWED_SCRIPTS = ('getstats.GetDeviceStats', 'hiera_export.HieraExport')
+ALLOWED_SCRIPTS = ("getstats.GetDeviceStats", "hiera_export.HieraExport")
 TIMEOUT = 300
 
 
@@ -26,26 +26,26 @@ def config():
 def get_result(result_url, headers):
     """Accept a 'result' URL and busy wait until timeout for results"""
     start = time.time()
-    while (time.time() < start + TIMEOUT):
+    while time.time() < start + TIMEOUT:
         time.sleep(0.2)
         result = requests.get(result_url, headers=headers)
         if not result.ok:
             return make_response(result.text, result.status_code)
         data = result.json()
-        if data['data'] is not None:
-            return data['data']['output']
+        if data["data"] is not None:
+            return data["data"]["output"]
     return make_response("Timeout exceeded.", 500)
 
 
-@app.route('/<script>')
+@app.route("/<script>")
 def run_script(script):
     # Only support specific scripts
     if script not in ALLOWED_SCRIPTS:
         abort(404)
 
     # construct request
-    api_url = '{}api/extras/scripts/{}/'.format(config()['netbox']['api'], script)
-    headers = {'Authorization': 'Token {}'.format(config()['netbox']['token_rw'])}
+    api_url = "{}api/extras/scripts/{}/".format(config()["netbox"]["api"], script)
+    headers = {"Authorization": "Token {}".format(config()["netbox"]["token_rw"])}
     data = {"data": {}, "commit": 1}
     result = requests.post(api_url, headers=headers, json=data)
 
@@ -54,4 +54,4 @@ def run_script(script):
         return make_response(result.text, result.status_code)
 
     # Return the resulting output of the script
-    return get_result(result.json()['result']['url'], headers)
+    return get_result(result.json()["result"]["url"], headers)

@@ -108,8 +108,9 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
                 invalid_device = Device.objects.get(name=device)
                 self.log_failure(
                     invalid_device,
-                    ("Device is in PuppetDB but is {} in Netbox (should be Active or Failed)")
-                    .format(invalid_device.get_status_display()),
+                    ("Device is in PuppetDB but is {} in Netbox (should be Active or Failed)").format(
+                        invalid_device.get_status_display()
+                    ),
                 )
             else:
                 self.log_failure(None, "expected device missing from Netbox: {}".format(device))
@@ -126,8 +127,9 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             if device.name not in puppetdb_devices:
                 self.log_failure(
                     device,
-                    ("Device is {} in Netbox but is missing from PuppetDB (should be {})")
-                    .format(device.get_status_display(), EXCLUDE_AND_FAILED_STATUSES),
+                    ("Device is {} in Netbox but is missing from PuppetDB (should be {})").format(
+                        device.get_status_display(), EXCLUDE_AND_FAILED_STATUSES
+                    ),
                 )
             elif puppetdb_devices[device.name]:  # True if device is is_virtual
                 self.log_failure(device, "expected physical device marked as virtual in PuppetDB")
@@ -168,7 +170,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
                 continue
 
             # Split on ' - ' to remove the WMF standard configurations from the names (i.e. - ConfigA 202107)
-            if device.device_type.model.split(' - ')[0] != puppetdb_models[device.name]:
+            if device.device_type.model.split(" - ")[0] != puppetdb_models[device.name]:
                 self.log_failure(
                     device,
                     "mismatched device models: {} (netbox) != {} (puppetdb)".format(

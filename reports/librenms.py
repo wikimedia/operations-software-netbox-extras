@@ -29,9 +29,9 @@ EXCLUDE_SITES = ()
 
 # Query filters for excluding certain models that don't seem to report correctly to LibreNMS
 # or are unmanaged.
-MODEL_EXCLUDES = (
-    Q(device_type__manufacturer__slug="eaton")  # Doesn't report its vendor in  LibreNMS description/hardware
-)
+MODEL_EXCLUDES = Q(
+    device_type__manufacturer__slug="eaton"
+)  # Doesn't report its vendor in  LibreNMS description/hardware
 
 INVENTORY_EXCLUDES = Q(name="FPM Board")
 
@@ -126,9 +126,7 @@ class LibreNMS(Report):
         configfile = configparser.ConfigParser()
         configfile.read(CONFIG_FILE)
         config = configfile["librenms"]
-        return LibreNMSData(
-            config["dbhost"], config["dbport"], config["user"], config["password"], config["database"]
-        )
+        return LibreNMSData(config["dbhost"], config["dbport"], config["user"], config["password"], config["database"])
 
     def test_nb_net_in_librenms(self):
         """Check that every Device in the asw, pfw, msw, and cr classes in Netbox are `devices` in LibreNMS,

@@ -37,7 +37,7 @@ class GetHosts(Script):
         elif ipaddress.assigned_object_type == self.vm_ct and ipaddress.assigned_object:
             # get the hostname
             hostname = ipaddress.assigned_object.virtual_machine.name
-        elif ipaddress.role == 'vip' and ipaddress.dns_name:
+        elif ipaddress.role == "vip" and ipaddress.dns_name:
             hostname = ipaddress.dns_name
         else:
             return None, None
@@ -49,17 +49,17 @@ class GetHosts(Script):
         # Keep decent indentation (for nothing as Netbox strips empty characters)
         for name, networks in sorted(singles.items()):
             sorted_networks = sorted(networks)
-            output.write('{} = {} # {}\n'.format(name, str(sorted_networks.pop(0)), name))
+            output.write(f"{name} = {str(sorted_networks.pop(0))} # {name}\n")
             for network in sorted_networks:
-                output.write('{} # {}\n'.format(str(network).rjust(len(name) + len(str(network)) + 3), name))
+                output.write(f"{str(network).rjust(len(name) + len(str(network)) + 3)} # {name}\n")
 
-        output.write('\n\n\n')  # Give me some space
+        output.write("\n\n\n")  # Give me some space
         # And now create the groups
         for name, members in sorted(groups.items()):
             sorted_members = sorted(members)
-            output.write('{}_group = {}\n'.format(name, sorted_members.pop(0)))
+            output.write(f"{name}_group = {sorted_members.pop(0)}\n")
             for member in sorted_members:
-                output.write('{}\n'.format(member.rjust(len(name) + len(member) + 9)))
+                output.write(f"{member.rjust(len(name) + len(member) + 9)}\n")
 
         return output.getvalue()
 
@@ -82,7 +82,7 @@ class GetHosts(Script):
 
         for hostname in hosts.keys():
             # create the grouping key (device prefix), best effort
-            group, sub_count = subn(r'\d{4}', '', hostname)
+            group, sub_count = subn(r"\d{4}", "", hostname)
             if sub_count:
                 groups[group].add(hostname)
 

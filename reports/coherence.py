@@ -17,7 +17,7 @@ DEVICE_ROLE_BLOCKLIST = ("cablemgmt", "storagebin", "optical-device", "patch-pan
 ASSET_TAG_BLOCKLIST = ("patch-panel",)
 ASSET_TAG_RE = re.compile(r"WMF\d{4,}")  # Update the error message if you edit the regex
 TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
-INVALID_ACTIVE_NAMES = ['future', 'spare']
+INVALID_ACTIVE_NAMES = ["future", "spare"]
 
 
 def _get_devices_query():
@@ -35,10 +35,10 @@ class Coherence(Report):
             if device.asset_tag is None:
                 self.log_failure(device, "missing asset tag")
             elif not ASSET_TAG_RE.fullmatch(device.asset_tag):
-                self.log_failure(device, "malformed asset tag: {} (WMF then 4 or more digits)".format(device.asset_tag))
+                self.log_failure(device, f"malformed asset tag: {device.asset_tag} (WMF then 4 or more digits)")
             else:
                 success_count += 1
-        self.log_success(None, "{} correctly formatted asset tags".format(success_count))
+        self.log_success(None, f"{success_count} correctly formatted asset tags")
 
     def test_purchase_date(self):
         """Test that each device has a purchase date."""
@@ -51,7 +51,7 @@ class Coherence(Report):
                 self.log_failure(device, "purchase date is in the future")
             else:
                 success_count += 1
-        self.log_success(None, "{} present purchase dates".format(success_count))
+        self.log_success(None, f"{success_count} present purchase dates")
 
     def test_duplicate_serials(self):
         """Test that all serial numbers are unique."""
@@ -75,7 +75,7 @@ class Coherence(Report):
                 .filter(serial__in=list(dups))
                 .order_by("serial")
             ):
-                self.log_failure(device, "duplicate serial: {}".format(device.serial))
+                self.log_failure(device, f"duplicate serial: {device.serial}")
         else:
             self.log_success(None, "No duplicate serials found")
 
@@ -91,7 +91,7 @@ class Coherence(Report):
                 self.log_failure(device, "missing serial number")
             else:
                 success_count += 1
-        self.log_success(None, "{} present serial numbers".format(success_count))
+        self.log_success(None, f"{success_count} present serial numbers")
 
     def test_ticket(self):
         """Determine if the procurement ticket matches the expected format."""
@@ -103,9 +103,9 @@ class Coherence(Report):
             elif device.cf["ticket"] is None:
                 self.log_failure(device, "missing procurement ticket")
             else:
-                self.log_failure(device, "malformed procurement ticket: {}".format(ticket))
+                self.log_failure(device, f"malformed procurement ticket: {ticket}")
 
-        self.log_success(None, "{} correctly formatted procurement tickets".format(success_count))
+        self.log_success(None, f"{success_count} correctly formatted procurement tickets")
 
     def test_device_name(self):
         """Device names should be lower case."""
@@ -117,14 +117,16 @@ class Coherence(Report):
                     self.log_failure(device, "malformed device name for active device (should be lowercase)")
                 else:
                     warnings.append(device)
-            elif (any(x in device.name for x in INVALID_ACTIVE_NAMES)
-                  and device.status == DeviceStatusChoices.STATUS_ACTIVE):
+            elif (
+                any(x in device.name for x in INVALID_ACTIVE_NAMES)
+                and device.status == DeviceStatusChoices.STATUS_ACTIVE
+            ):
                 self.log_failure(device, "Future or spare in active device name")
             else:
                 success += 1
 
         [self.log_warning(x, "malformed device name for inactive device") for x in warnings]
-        self.log_success(None, "{} correctly formatted device names".format(success))
+        self.log_success(None, f"{success} correctly formatted device names")
 
     def test_no_staged_servers(self):
         """No server device should be in staged status."""
@@ -165,14 +167,14 @@ class Rack(Report):
             )
             .filter(rack=None)
         ):
-            self.log_failure(device, "no rack defined for status {} device".format(device.get_status_display()))
+            self.log_failure(device, f"no rack defined for status {device.get_status_display()} device")
 
     def test_connected_unracked(self):
         """Determine if unracked boxes still have console connections marked as conneced."""
         for device in _get_devices_query().filter(rack=None):
             consoleports = device.consoleports.all()
             good = True
-            msgs = ["connected console ports attached to unracked device {}:".format(device.name)]
+            msgs = [f"connected console ports attached to unracked device {device.name}:"]
             for port in consoleports:
                 if port.cable:
                     msgs.append(port.name)
