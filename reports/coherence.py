@@ -1,6 +1,4 @@
-"""
-Several integrity/coherence checks against the data.
-"""
+"""Several integrity/coherence checks against the data."""
 
 import datetime
 import re

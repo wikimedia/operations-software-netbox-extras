@@ -1,18 +1,16 @@
-"""
-Report on various network related errors.
-
-"""
+"""Report on various network related errors."""
 import re
 
 from collections import defaultdict
 
 from dcim.choices import DeviceStatusChoices
 from dcim.constants import VIRTUAL_IFACE_TYPES
-from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
-
 from dcim.models import Device, Interface
-from extras.reports import Report
+
+from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix
+
+from extras.reports import Report
 
 from django.db.models import Count
 
@@ -109,8 +107,7 @@ class Network(Report):
                     f"Duplicated interface with different prefix (eg. xe- & ge-) on {interface.device}",
                 )
                 continue
-            else:
-                seen_interfaces[interface.device.name].add(interface.name.split("-")[1])
+            seen_interfaces[interface.device.name].add(interface.name.split("-")[1])
 
     def test_enabled_not_connected(self):
         """No interface on a network device should be enabled but not connected.
@@ -143,7 +140,6 @@ class Network(Report):
 
         Exception being interfaces with "no-mon" in the description.
         """
-
         attributes = ["description", "lag", "mtu", "mode", "mac_address", "count_ipaddresses"]
         for interface in (
             Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)
@@ -167,7 +163,6 @@ class Network(Report):
 
     def test_mtu(self):
         """Reports on interfaces not using our MTU standards."""
-
         # frack ignored as they're not managed by Netbox.
         for interface in (
             Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)  # Network devices
@@ -196,7 +191,7 @@ class Network(Report):
                 if str(interface.name).startswith("vcp-"):
                     continue
                 # Report core links with different MTU on each side:
-                elif interface.connected_endpoint.mtu != interface.mtu:
+                if interface.connected_endpoint.mtu != interface.mtu:
                     self.log_failure(
                         interface,
                         f"[{interface.device.site.slug}] MTU mismatch on link between "
@@ -217,7 +212,6 @@ class Network(Report):
 
         To help with T253173.
         """
-
         success = 0
         # Exclude fr-tech as long as they're v4 only
         for device in Device.objects.filter(device_role__slug="server", tenant__isnull=True).exclude(
@@ -251,7 +245,6 @@ class Network(Report):
 
         See also T273248#6791839
         """
-
         success = 0
         seen_ipaddress = defaultdict(set)
         # Iterate over all the VIPs, split the IP from mask, if duplicate, check that they match
@@ -269,7 +262,6 @@ class Network(Report):
         If a device have both a primary IPv4 and IPv6 with DNS names, check that they match.  Also, check that the
         primary IPs DNS names match the hostname.
         """
-
         success = 0
         for device in Device.objects.filter(device_role__slug="server", tenant__isnull=True).exclude(
             status__in=EXCLUDE_STATUSES
@@ -294,8 +286,7 @@ class Network(Report):
                     ),
                 )
                 continue
-            else:
-                success += 1
+            success += 1
         self.log_success(None, f"{success} devices with matching primary IPv4 & IPv6")
 
     def test_mgmt_dns_hostname(self):
@@ -321,12 +312,11 @@ class Network(Report):
         self.log_success(None, f"{success} correct mgmt DNS names")
 
     def test_matching_vlan(self):
-        """Check IPs are assigned to server ports match the connected Vlan
+        """Check IPs are assigned to server ports match the connected Vlan.
 
         Every IP address bound to a host interface should come from the correct
         subnet, matching the Vlan the equivalent switch port is bound to.
         """
-
         success = 0
         for interface in (
             Interface.objects.filter(device__device_role__slug="server")
@@ -366,7 +356,7 @@ class Network(Report):
             self.log_success(None, f"{success} server IP allocations matched attached switch port Vlan.")
 
     def test_port_block_consistency(self):
-        """Validate that port types within each block of 4 are consistent for QFX5120 series
+        """Validate that port types within each block of 4 are consistent for QFX5120 series.
 
         Trident 3 based devices like the QFX5120 have a constraint that port speeds (1/10/25Gb)
         must be consistent within each block of 4 (i.e. 0-3, 4-7, 8-11 etc).  This check validates
@@ -374,7 +364,6 @@ class Network(Report):
 
         Only the SFP28 slots 0-47 are considered as the constraint does not apply to QSFP28 ports.
         """
-
         success = 0
         for device in Device.objects.filter(device_type__slug="qfx5120-48y-8c"):
             port_blocks = {}
@@ -392,7 +381,7 @@ class Network(Report):
                     continue
 
                 block = port - (port % 4)
-                if block not in port_blocks.keys():
+                if block not in port_blocks:
                     port_blocks[block] = interface.type
                 elif port_blocks[block] != interface.type:
                     block_members = ", ".join(str(x) for x in range(block, 3)) + f" and {block+4}"

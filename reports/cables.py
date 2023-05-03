@@ -1,5 +1,4 @@
-"""
-Report on various cable, port, and termination related errors.
+"""Report on various cable, port, and termination related errors.
 
 BLOCKLISTS:
   test_blank_cable_label: eqiad
@@ -54,13 +53,16 @@ class Cables(Report):
     description = __doc__
 
     def _port_names_test(self, queryset, regex, label):
-        """Test and report each item in the query set (presumed to be a CableTermination) for its name matching the
+        """Check that Cables and CableTermination have proper name.
+
+        Test and report each item in the query set (presumed to be a CableTermination) for its name matching the
         compiled regular expression passed as regex.
 
         Arguments:
             queryset: A pre-filtered queryset of a CableTermination child.
             regex: A pre-compiled regular expression object to match the cable names against.
             label: A label to identify the cables with in log messages.
+
         """
         successes = 0
         for cable in queryset:
@@ -133,13 +135,15 @@ class Cables(Report):
         return site
 
     def _core_site_server_cable(self, cable):
-        """check if the cable is a core site server cable.
+        """Check if the cable is a core site server cable.
 
-         Arguments:
+        Arguments:
             cable: Netbox cable
+
         Returns:
             true: the cable is a core site server cable.
             false: it's not.
+
         """
         if (
             cable.termination_a_type == interface_ct

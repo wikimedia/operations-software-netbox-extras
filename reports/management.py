@@ -1,6 +1,4 @@
-"""
-Check certain kinds of devices for the presence of a console port.
-"""
+"""Check certain kinds of devices for the presence of a console port."""
 
 from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
@@ -16,9 +14,12 @@ EXCLUDED_SITES = ("eqord", "eqdfw", "knams")
 
 
 class ManagementConsole(Report):
+    """All checks related to management/console."""
+
     description = __doc__
 
     def test_management_console(self):
+        """Check certain kinds of devices for the presence of a console port and cable."""
         successcount = 0
         for device in (
             Device.objects.exclude(

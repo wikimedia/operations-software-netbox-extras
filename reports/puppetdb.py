@@ -1,6 +1,4 @@
-"""
-Report parity errors between PuppetDB and Netbox.
-"""
+"""Report parity errors between PuppetDB and Netbox."""
 import configparser
 
 from copy import deepcopy
@@ -33,6 +31,8 @@ DEVICE_QUERY = Device.objects.filter(device_role__slug__in=INCLUDE_ROLES, tenant
 class PuppetDBDataMixin:
     """Provides callables which cache their returns, which access PuppetDB data."""
 
+    description = __doc__
+
     @lru_cache(1)
     def _get_config(self):
         """Get configuration file."""
@@ -52,7 +52,9 @@ class PuppetDBDataMixin:
 
 
 class VirtualMachines(Report, PuppetDBDataMixin):
-    description = """Report parity errors between PuppetDB and Netbox for Virtual Machines"""
+    """Report parity errors between PuppetDB and Netbox for Virtual Machines."""
+
+    description = __doc__
 
     def test_puppetdb_vms_in_netbox(self):
         """Check that all PuppetDB VMs are in Netbox VMs."""
@@ -72,7 +74,6 @@ class VirtualMachines(Report, PuppetDBDataMixin):
 
     def test_netbox_vms_in_puppetdb(self):
         """Check that all Netbox VMs are in PuppetDB VMs."""
-
         vms = VirtualMachine.objects.exclude(status=DeviceStatusChoices.STATUS_OFFLINE)
         puppetdb_isvirtual = self._get_puppetdb_fact("is_virtual")
         success = 0
@@ -88,11 +89,12 @@ class VirtualMachines(Report, PuppetDBDataMixin):
 
 
 class PhysicalHosts(Report, PuppetDBDataMixin):
-    description = """Report parity errors between PuppetDB and Netbox for physical devices."""
+    """Report parity errors between PuppetDB and Netbox for physical devices."""
+
+    description = __doc__
 
     def test_puppetdb_in_netbox(self):
         """Check that all PuppetDB physical devices are in Netbox."""
-
         valid_netbox_devices = DEVICE_QUERY.exclude(status__in=EXCLUDE_STATUSES).values_list("name", flat=True)
         invalid_netbox_devices = DEVICE_QUERY.filter(status__in=EXCLUDE_STATUSES).values_list("name", flat=True)
 
@@ -160,7 +162,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
         self.log_success(None, f"{success} physical devices have matching serial numbers")
 
     def test_puppetdb_models(self):
-        """Check that the device productname in PuppetDB match models set in Netbox"""
+        """Check that the device productname in PuppetDB match models set in Netbox."""
         devices = deepcopy(DEVICE_QUERY)
         puppetdb_models = self._get_puppetdb_fact("productname")
         success = 0

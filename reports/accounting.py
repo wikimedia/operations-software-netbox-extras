@@ -29,6 +29,10 @@ class Accounting(Report):
 
     description = __doc__
 
+    def __init__(self):
+        """Generic init."""
+        self.assets = {}
+
     def run(self, job_results):
         """Load the config file and initializes the Google Sheets API."""
         config = configparser.ConfigParser(interpolation=None)
@@ -44,7 +48,10 @@ class Accounting(Report):
         return super().run(job_results)
 
     @staticmethod
-    def get_assets_from_accounting(creds, sheet_id, include_range, exclude_range):
+    def get_assets_from_accounting(creds, sheet_id, include_range, exclude_range):  # noqa: MC0001
+        # pylint: disable-msg=too-many-locals
+
+        # Disable the alerting as there is no point for now to work on simplifying the function
         """Retrieve all assets from a specified Google Spreadsheet."""
         # initialize the credentials API
         creds = service_account.Credentials.from_service_account_info(

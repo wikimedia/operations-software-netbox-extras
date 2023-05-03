@@ -1,6 +1,4 @@
-"""
-Report parity errors between LibreNMS and Netbox.
-"""
+"""Report parity errors between LibreNMS and Netbox."""
 import configparser
 import pymysql
 
