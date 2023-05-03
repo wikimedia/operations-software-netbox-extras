@@ -158,11 +158,11 @@ class LibreNMS(Report):
                 if not dev.primary_ip:
                     no_ip += 1
                 else:
-                    self.log_failure(dev, "missing Netbox device from LibreNMS of role {}".format(dev.device_role.slug))
+                    self.log_failure(dev, f"missing Netbox device from LibreNMS of role {dev.device_role.slug}")
 
         if no_ip:
-            self.log_info(None, "{} Netbox devices with no IP and not in LibreNMS".format(no_ip))
-        self.log_success(None, "{} Netbox devices in LibreNMS".format(success))
+            self.log_info(None, f"{no_ip} Netbox devices with no IP and not in LibreNMS")
+        self.log_success(None, f"{success} Netbox devices in LibreNMS")
 
     def test_nb_inventory_in_librenms(self):
         """Check that every InventoryItem attached to a Device in Netbox, is in `entPhysical` table in librenms, matched
@@ -184,7 +184,7 @@ class LibreNMS(Report):
             else:
                 success += 1
 
-        self.log_success(None, "{} Netbox inventory items in LibreNMS".format(success))
+        self.log_success(None, f"{success} Netbox inventory items in LibreNMS")
 
     def test_librenms_in_nb(self):
         """Check that every `device` in LibreNMS exists as a Device in Netbox, matched by serial number."""
@@ -203,7 +203,7 @@ class LibreNMS(Report):
             else:
                 success += 1
 
-        self.log_success(None, "{} LibreNMS devices in Netbox".format(success))
+        self.log_success(None, f"{success} LibreNMS devices in Netbox")
 
     def test_librenms_vendor_model(self):
         """Check that every device from Netbox in LibreNMS has matchable hardware+manufacturer information.
@@ -266,4 +266,4 @@ class LibreNMS(Report):
                         ).format(nb_vendor_model_string, librenms_vendor_model_string),
                     )
 
-        self.log_success(None, "{} LibreNMS hardware and manufacturer matches in Netbox".format(success))
+        self.log_success(None, f"{success} LibreNMS hardware and manufacturer matches in Netbox")

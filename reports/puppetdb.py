@@ -47,7 +47,7 @@ class PuppetDBDataMixin:
         url = "/".join([config["puppetdb"]["url"], "/v1/facts", factname])
         response = requests.get(url, verify=config["puppetdb"]["ca_cert"])
         if response.status_code != 200:
-            raise Exception("Cannot connect to PuppetDB {} - {} {}".format(url, response.status_code, response.text))
+            raise Exception(f"Cannot connect to PuppetDB {url} - {response.status_code} {response.text}")
         return response.json()
 
 
@@ -64,11 +64,11 @@ class VirtualMachines(Report, PuppetDBDataMixin):
                 continue
 
             if device not in vms:
-                self.log_failure(None, "missing VM from Netbox: {} ".format(device))
+                self.log_failure(None, f"missing VM from Netbox: {device}")
             else:
                 success += 1
 
-        self.log_success(None, "{} VMs that are in PuppetDB are also in Netbox VMs".format(success))
+        self.log_success(None, f"{success} VMs that are in PuppetDB are also in Netbox VMs")
 
     def test_netbox_vms_in_puppetdb(self):
         """Check that all Netbox VMs are in PuppetDB VMs."""
@@ -84,7 +84,7 @@ class VirtualMachines(Report, PuppetDBDataMixin):
             else:
                 success += 1
 
-        self.log_success(None, "{} VMs that are in Netbox are also in PuppetDB VMs".format(success))
+        self.log_success(None, f"{success} VMs that are in Netbox are also in PuppetDB VMs")
 
 
 class PhysicalHosts(Report, PuppetDBDataMixin):
@@ -113,9 +113,9 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
                     ),
                 )
             else:
-                self.log_failure(None, "expected device missing from Netbox: {}".format(device))
+                self.log_failure(None, f"expected device missing from Netbox: {device}")
 
-        self.log_success(None, "{} physical devices that are in PuppetDB are also in Netbox".format(success))
+        self.log_success(None, f"{success} physical devices that are in PuppetDB are also in Netbox")
 
     def test_netbox_in_puppetdb(self):
         """Check that all Netbox physical devices are in PuppetDB."""
@@ -136,7 +136,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             else:
                 success += 1
 
-        self.log_success(None, "{} physical devices that are in Netbox are also in PuppetDB".format(success))
+        self.log_success(None, f"{success} physical devices that are in Netbox are also in PuppetDB")
 
     def test_puppetdb_serials(self):
         """Check that devices that exist in both PuppetDB and Netbox have matching serial numbers."""
@@ -157,7 +157,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             else:
                 success += 1
 
-        self.log_success(None, "{} physical devices have matching serial numbers".format(success))
+        self.log_success(None, f"{success} physical devices have matching serial numbers")
 
     def test_puppetdb_models(self):
         """Check that the device productname in PuppetDB match models set in Netbox"""
@@ -180,4 +180,4 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             else:
                 success += 1
 
-        self.log_success(None, "{} devices have matching model names".format(success))
+        self.log_success(None, f"{success} devices have matching model names")

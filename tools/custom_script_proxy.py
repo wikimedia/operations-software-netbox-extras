@@ -44,8 +44,8 @@ def run_script(script):
         abort(404)
 
     # construct request
-    api_url = "{}api/extras/scripts/{}/".format(config()["netbox"]["api"], script)
-    headers = {"Authorization": "Token {}".format(config()["netbox"]["token_rw"])}
+    api_url = f"{config()['netbox']['api']}api/extras/scripts/{script}/"
+    headers = {"Authorization": f"Token {config()['netbox']['token_rw']}"}
     data = {"data": {}, "commit": 1}
     result = requests.post(api_url, headers=headers, json=data)
 

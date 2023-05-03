@@ -99,14 +99,14 @@ class Network(Report):
             else:
                 if "-0/" not in interface.name:
                     self.log_failure(
-                        interface, "Interface on a non-VC should start with -0/ on {}".format(interface.device)
+                        interface, f"Interface on a non-VC should start with -0/ on {interface.device}"
                     )
                     continue
             # Make sure we don't have two types on interfaces with the same ID (number)
             if interface.name.split("-")[1] in seen_interfaces[interface.device.name]:
                 self.log_failure(
                     interface,
-                    ("Duplicated interface with different prefix (eg. xe- & ge-) on {}".format(interface.device)),
+                    f"Duplicated interface with different prefix (eg. xe- & ge-) on {interface.device}",
                 )
                 continue
             else:

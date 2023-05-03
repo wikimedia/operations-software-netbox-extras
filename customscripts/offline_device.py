@@ -21,7 +21,7 @@ class OfflineDevice(Script):
         try:
             self._run(data)
         except Exception as e:
-            self.log_failure("Failed to offline device(s) {name}: {e}".format(name=data["device_name"], e=e))
+            self.log_failure(f"Failed to offline device(s) {data['device_name']}: {e}")
 
         return self._format_logs()
 
