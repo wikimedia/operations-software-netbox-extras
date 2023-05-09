@@ -1,8 +1,25 @@
 """Validator class for the Interface model."""
 
+import re
+
 from extras.validators import CustomValidator
 
 NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw")
+
+# For ergonomics the regexps that match interface names are placed in this tuple.
+INTERFACES_REGEXP = re.compile(
+    (
+        r"|".join(
+            (
+                r"^fxp\d-re\d$",  # routing engine management
+                r"^[a-z]{2}-\d+/\d+/\d+(:\d+){0,1}(\.\d+){0,1}$",  # Juniper (eg et-0/0/0:0.0)
+                r"^[a-z]{1,4}(\d+){0,1}(\.\d+){0,1}$",  # typical device names (eg. eth0, vlan.900, etc)
+                r"^\d+$",  # Netgear switch (just numbers)
+                r"^Ethernet\d+$",  # SONiC (eg. Ethernet1)
+            )
+        )
+    )
+)
 
 
 class Main(CustomValidator):
@@ -10,6 +27,13 @@ class Main(CustomValidator):
 
     def validate(self, instance):
         """Mandatory entry point"""
+        # Name
+        if (
+            instance.device.device_role.slug in NETWORK_ROLES
+            and not INTERFACES_REGEXP.fullmatch(instance.name)
+        ):
+            self.fail("Invalid name (must match the INTERFACES_REGEXP options)")
+
         # MTU
         if (
             hasattr(instance.connected_endpoint, "device")
@@ -42,7 +66,7 @@ class Main(CustomValidator):
             for attribute in attributes:
                 # Workaround bug T310590#8851738
                 # At creation time, count_ipaddresses is briefly at 246 then goes back to 0
-                if attribute == 'count_ipaddresses' and not instance.id:
+                if attribute == "count_ipaddresses" and not instance.id:
                     continue
                 if getattr(instance, attribute):
                     self.fail(

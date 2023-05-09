@@ -14,7 +14,6 @@ from dcim.models import (
     ConsoleServerPort,
     Interface,
     PowerPort,
-    PowerOutlet,
 )
 from extras.reports import Report
 
@@ -24,24 +23,6 @@ EXCLUDE_STATUSES = (
     DeviceStatusChoices.STATUS_INVENTORY,
     DeviceStatusChoices.STATUS_OFFLINE,
     DeviceStatusChoices.STATUS_PLANNED,
-)
-
-# For ergonomics the regexps that match interface names are placed in this
-# tuple. This is later joined with | to make the final regexp.
-INTERFACES_REGEXP = (
-    r"^mgmt\d?$|^ILO$|^i?DRAC$",  # managment interfaces
-    r"^fxp\d-re\d$",  # routing engine management interfaces
-    r"^[a-z]+-\d+/\d+/\d+(:\d+){0,1}(\.\d+){0,1}$",  # Juniper interfaces eg et-0/0/0:0.0
-    r"^[a-z]{1,4}(\d+){0,1}(\.\d+){0,1}$",  # typical device names (eg eth0) and vlan.900 etc.
-    r"^en(p\d+)?s\d+(f\d+)?((d|np)\d+)?$",  # systemd 'path' devices
-    r"^cali[a-f0-9]+",  # kubernetes calico interfaces
-    r"^(tap|brq)[a-f0-9]+\-[a-f0-9]+",  # cloudnet interfaces
-    r"^vxlan-\d+",  # cloudnet vxlan interfaces
-    r"^(br-internal|br-external|br-int)$",  # more cloudnet interfaces
-    r"^\d+$",  # Netgear switch interfaces are just numbers.
-    r"^lo([.:].+)",  # virtual interfaces
-    r"^(public|private)$",  # ganeti interfaces
-    r"^##PRIMARY##$",  # interface name placeholder
 )
 
 interface_ct = ContentType.objects.get_for_model(Interface)
@@ -110,22 +91,4 @@ class Cables(Report):
             PowerPort.objects.exclude(device__status__in=EXCLUDE_STATUSES),
             re.compile(r"PSU\d|PEM \d|Power Supply \d"),
             "power port",
-        )
-
-    def test_power_outlet_termination_names(self):
-        """Proxy to _port_names_test with values for checking power outlets."""
-        self._port_names_test(
-            PowerOutlet.objects.exclude(device__status__in=EXCLUDE_STATUSES),
-            re.compile(r"\d+"),
-            "power outlet",
-        )
-
-    def test_interface_termination_names(self):
-        """Proxy to _port_names_test with values for checking interfaces."""
-        self._port_names_test(
-            Interface.objects.exclude(device__status__in=EXCLUDE_STATUSES).exclude(
-                device__device_role__slug="server"
-            ),
-            re.compile((r"|".join(INTERFACES_REGEXP))),
-            "interface",
         )

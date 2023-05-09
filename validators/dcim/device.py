@@ -6,6 +6,7 @@ import datetime
 from dcim.choices import DeviceStatusChoices
 from dcim.models import Device
 from extras.validators import CustomValidator
+from wmflib.constants import DATACENTER_NUMBERING_PREFIX
 
 ROLES_OK_NO_ASSET_TAG = ("patch-panel",)
 ROLES_OK_NO_SERIAL = ("cablemgmt", "storagebin", "optical-device", "patch-panel")
@@ -13,6 +14,7 @@ STATUS_DECOM = (
     DeviceStatusChoices.STATUS_DECOMMISSIONING,
     DeviceStatusChoices.STATUS_OFFLINE,
 )
+STATUS_NAME_CAN_BE_ASSET = STATUS_DECOM + (DeviceStatusChoices.STATUS_PLANNED,)
 INVALID_ACTIVE_NAMES = ["future", "spare"]
 
 ASSET_TAG_RE = re.compile(
@@ -24,11 +26,11 @@ TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
 
-    def validate(self, instance):
-        """Mandatory entry point"""
-        # Name
+    def _validate_name(self, instance):
+        """Validate the device's name"""
         if instance.name != instance.name.lower():
             self.fail("Invalid name (must be lowercase)")
+
         if instance.status == DeviceStatusChoices.STATUS_ACTIVE and any(
             x in instance.name for x in INVALID_ACTIVE_NAMES
         ):
@@ -37,16 +39,40 @@ class Main(CustomValidator):
             )
         if "." in instance.name:
             self.fail("Invalid name (must not contain a dot)")
-        # TODO valid hostname (not FQDN, so no dots) regex
-        # in addition if a 4 digit number is present the first digit
-        # must match the DC's digit prefix rule (eqiad => 1, etc.)
+
+        if (
+            instance.name == instance.asset_tag.lower()
+            and instance.status in STATUS_NAME_CAN_BE_ASSET
+        ):
+            # decom/planned devices (can) have their asset tags as name
+            return
+
+        if instance.site.slug in instance.name:
+            # For usual special cases their name contains the site (cr1-eqiad, ex4300-spare3-codfw, atlas-codfw, etc)
+            return
+
+        host_id = re.search(r"\d{4}", instance.name)
+        if host_id and DATACENTER_NUMBERING_PREFIX[instance.site.slug] != str(
+            host_id.group()[0]
+        ):
+            self.fail(
+                f"Invalid name (first digit of {host_id.group()} must match device's site {instance.site.slug} digit)"
+            )
+        # We could improve it once we got rid of all the hosts not matching this convention, like "flerovium".
+
+    def validate(self, instance):
+        """Mandatory entry point"""
+        # Name
+        self._validate_name(instance)
 
         # asset_tag
         if instance.device_role.slug not in ROLES_OK_NO_ASSET_TAG:
             if instance.asset_tag is None:
                 self.fail("Missing asset tag")
             if not ASSET_TAG_RE.fullmatch(instance.asset_tag):
-                self.fail("Invalid asset tag (must be WMF then 4 or more digits)")
+                self.fail(
+                    "Invalid asset tag (must be (capitals) WMF then 4 or more digits)"
+                )
 
         # purchase_date
         purchase_date = instance.cf["purchase_date"]
