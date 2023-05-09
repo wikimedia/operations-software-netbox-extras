@@ -11,9 +11,14 @@ class Main(CustomValidator):
         # dns_name
         if len(instance.dns_name) > 255:
             self.fail(f'Invalid DNS name: too long ({len(instance.dns_name)})')
-        if instance.dns_name.endswith("."):
-            self.fail("Invalid DNS name: must not end with a dot")
 
-        allowed = re.compile(r"(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
-        if not all(allowed.match(x) for x in instance.dns_name.split(".")):
-            self.fail("Invalid DNS name: must be a valid FQDN")
+        if instance.dns_name:  # Accept empty values when there is no FQDN set
+            if instance.dns_name.endswith("."):
+                self.fail("Invalid DNS name: must not end with a dot")
+
+            if "." not in instance.dns_name:
+                self.fail("Invalid DNS name: no dot found, it must be an FQDN, not a hostname")
+
+            allowed = re.compile(r"(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
+            if not all(allowed.match(x) for x in instance.dns_name.split(".")):
+                self.fail("Invalid DNS name: must be a valid FQDN")
