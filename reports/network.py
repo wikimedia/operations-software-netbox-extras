@@ -273,32 +273,32 @@ class Network(Report):
             if interface.connected_endpoint.device.device_role.slug not in ("asw", "cloudsw"):
                 continue
 
-            vlan_pfxs = defaultdict(list)
-            for vlan in interface.connected_endpoint.untagged_vlan.prefixes.all():
-                vlan_pfxs[vlan.family].append(vlan)
+            prefixes = defaultdict(list)
+            for prefix in interface.connected_endpoint.untagged_vlan.prefixes.all():
+                prefixes[prefix.family].append(prefix)
 
-            ip_addrs = defaultdict(list)
+            ips = defaultdict(list)
             for ip in interface.ip_addresses.all():
-                ip_addrs[ip.family].append(ip)
+                ips[ip.family].append(ip)
 
             for family in (4, 6):
-                vlans = vlan_pfxs[family]
-                if not vlans:
+                family_prefixes = prefixes[family]
+                if not family_prefixes:
                     self.log_warning(
                         interface.connected_endpoint.untagged_vlan,
                         f"Vlan has no IPv{family} prefix assigned.",
                     )
                     continue
 
-                if len(vlans) > 1:
+                if len(family_prefixes) > 1:
                     self.log_failure(
                         interface.connected_endpoint.untagged_vlan,
-                        f"Vlan has more than one IPv{family} prefix assigned",
+                        f"Vlan has more than one IPv{family} prefix assigned: {family_prefixes}",
                     )
 
-                vlan = vlans[0]
-                for ip in ip_addrs[family]:
-                    if ip.address.network != vlan.prefix.network or ip.address.prefixlen != vlan.prefix.prefixlen:
+                prefix = family_prefixes[0]
+                for ip in ips[family]:
+                    if ip.address.network != prefix.prefix.network or ip.address.prefixlen != prefix.prefix.prefixlen:
                         self.log_failure(
                             interface.device,
                             f"{ip.address} does not match connected Vlan "
