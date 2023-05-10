@@ -190,7 +190,7 @@ class Network(Report):
                 )
             else:
                 success += 1
-        self.log_success(None, "{success} correctly masked VIPs")
+        self.log_success(None, f"{success} correctly masked VIPs")
 
     def test_primary_ip_dns_match(self):
         """Check that primary IPv4/IPv6 DNS names match.
