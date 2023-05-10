@@ -29,11 +29,12 @@ class Accounting(Report):
 
     description = __doc__
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         """Generic init."""
+        super().__init__(*args, **kwargs)
         self.assets = {}
 
-    def run(self, job_results):
+    def pre_run(self):
         """Load the config file and initializes the Google Sheets API."""
         config = configparser.ConfigParser(interpolation=None)
         config.read(CONFIG_FILE)
@@ -44,8 +45,6 @@ class Accounting(Report):
             config["accounting"]["include_range"],
             config["accounting"]["exclude_range"],
         )
-
-        return super().run(job_results)
 
     @staticmethod
     def get_assets_from_accounting(creds, sheet_id, include_range, exclude_range):  # noqa: MC0001
