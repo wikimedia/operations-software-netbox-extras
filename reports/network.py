@@ -8,7 +8,7 @@ from dcim.constants import VIRTUAL_IFACE_TYPES
 from dcim.models import Device, Interface
 
 from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
-from ipam.models import IPAddress, Prefix
+from ipam.models import IPAddress
 
 from extras.reports import Report
 
@@ -267,48 +267,45 @@ class Network(Report):
             .exclude(cable__isnull=True)
             .annotate(Count("ip_addresses"))
             .filter(ip_addresses__count__gte=1)
+            .select_related("_path")  # This is the field name for connected_endpoint
+            .prefetch_related("ip_addresses", "connected_endpoint__untagged_vlan__prefixes")
         ):
-            if interface.connected_endpoint.device.device_role.slug in (
-                "asw",
-                "cloudsw",
-            ):
-                for family in [4, 6]:
-                    try:
-                        vlan_pfx = (
-                            interface.connected_endpoint.untagged_vlan.prefixes.get(
-                                prefix__family=family
-                            )
-                        )
-                    except Prefix.MultipleObjectsReturned:
+            if interface.connected_endpoint.device.device_role.slug not in ("asw", "cloudsw"):
+                continue
+
+            vlan_pfxs = defaultdict(list)
+            for vlan in interface.connected_endpoint.untagged_vlan.prefixes.all():
+                vlan_pfxs[vlan.family].append(vlan)
+
+            ip_addrs = defaultdict(list)
+            for ip in interface.ip_addresses.all():
+                ip_addrs[ip.family].append(ip)
+
+            for family in (4, 6):
+                vlans = vlan_pfxs[family]
+                if not vlans:
+                    self.log_warning(
+                        interface.connected_endpoint.untagged_vlan,
+                        f"Vlan has no IPv{family} prefix assigned.",
+                    )
+                    continue
+
+                if len(vlans) > 1:
+                    self.log_failure(
+                        interface.connected_endpoint.untagged_vlan,
+                        f"Vlan has more than one IPv{family} prefix assigned",
+                    )
+
+                vlan = vlans[0]
+                for ip in ip_addrs[family]:
+                    if ip.address.network != vlan.prefix.network or ip.address.prefixlen != vlan.prefix.prefixlen:
                         self.log_failure(
-                            interface.connected_endpoint.untagged_vlan,
-                            f"Vlan has more than one IPv{family} prefix assigned",
+                            interface.device,
+                            f"{ip.address} does not match connected Vlan "
+                            f"{interface.connected_endpoint.untagged_vlan}",
                         )
-                        vlan_pfx = (
-                            interface.connected_endpoint.untagged_vlan.prefixes.filter(
-                                prefix__family=family
-                            )[0]
-                        )
-                    except Prefix.DoesNotExist:
-                        self.log_warning(
-                            interface.connected_endpoint.untagged_vlan,
-                            f"Vlan has no IPv{family} prefix assigned.",
-                        )
-                        continue
-                    for ip_addr in interface.ip_addresses.filter(
-                        address__family=family
-                    ):
-                        if (
-                            ip_addr.address.network != vlan_pfx.prefix.network
-                            or ip_addr.address.prefixlen != vlan_pfx.prefix.prefixlen
-                        ):
-                            self.log_failure(
-                                interface.device,
-                                f"{ip_addr.address} does not match connected Vlan "
-                                f"{interface.connected_endpoint.untagged_vlan}",
-                            )
-                        else:
-                            success += 1
+                    else:
+                        success += 1
 
         if success > 0:
             self.log_success(
