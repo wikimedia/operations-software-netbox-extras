@@ -73,7 +73,7 @@ class Main(CustomValidator):
         ):
             if instance.serial is None or instance.serial == "":
                 self.fail("Missing serial number")
-            device_same_serial = Device.objects.get(serial=instance.serial)
+            device_same_serial = Device.objects.filter(serial=instance.serial).first()
             if device_same_serial and device_same_serial != instance:
                 self.fail(f"Duplicate serial number with {device_same_serial}")
 
