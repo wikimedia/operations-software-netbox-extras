@@ -40,6 +40,10 @@ class Main(CustomValidator):
             and instance.device.device_role.slug in NETWORK_ROLES
         ):  # network devices only
             for attribute in attributes:
+                # Workaround bug T310590#8851738
+                # At creation time, count_ipaddresses is briefly at 246 then goes back to 0
+                if attribute == 'count_ipaddresses' and not instance.id:
+                    continue
                 if getattr(instance, attribute):
                     self.fail(
                         f"Invalid {attribute} (must not be set on disabled interfaces)"
