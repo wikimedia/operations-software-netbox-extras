@@ -21,6 +21,8 @@ class Main(CustomValidator):
                 cable_same_serial = Cable.objects.get(label=instance.label)
             except Cable.DoesNotExist:
                 return
+            if instance.id and cable_same_serial.id == instance.id:
+                return
             if self._get_site_slug(cable_same_serial) == self._get_site_slug(instance):
                 self.fail(f"Duplicate label with {cable_same_serial}")
         # Allow blank cables in core sites
