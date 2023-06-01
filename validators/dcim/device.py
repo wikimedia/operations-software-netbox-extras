@@ -41,7 +41,8 @@ class Main(CustomValidator):
             self.fail("Invalid name (must not contain a dot)")
 
         if (
-            instance.name == instance.asset_tag.lower()
+            instance.asset_tag
+            and instance.name == instance.asset_tag.lower()
             and instance.status in STATUS_NAME_CAN_BE_ASSET
         ):
             # decom/planned devices (can) have their asset tags as name
