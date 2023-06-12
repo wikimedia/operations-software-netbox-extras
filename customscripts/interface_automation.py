@@ -898,11 +898,10 @@ class ImportPuppetDB(Script, Importer):
             self.log_info(f"{device} done.")
         for device in vmdevices:
             self.log_info(f"Processing virtual device {device}")
-            if self._validate_vm(device):
-                net_driver, networking, lldp = self._get_networking_facts(cfg, device)
-                if net_driver is None:
-                    continue
-                messages.extend(self._import_interfaces_for_device(device, net_driver, networking, lldp, True))
+            net_driver, networking, lldp = self._get_networking_facts(cfg, device)
+            if net_driver is None:
+                continue
+            messages.extend(self._import_interfaces_for_device(device, net_driver, networking, lldp, True))
             self.log_info(f"{device} done.")
 
         return "\n".join(messages)
