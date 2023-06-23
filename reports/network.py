@@ -269,9 +269,14 @@ class Network(Report):
             .annotate(Count("ip_addresses"))
             .filter(ip_addresses__count__gte=1)
             .select_related("_path")  # This is the field name for connected_endpoint
-            .prefetch_related("ip_addresses", "connected_endpoint__untagged_vlan__prefixes")
+            .prefetch_related(
+                "ip_addresses", "connected_endpoint__untagged_vlan__prefixes"
+            )
         ):
-            if interface.connected_endpoint.device.device_role.slug not in ("asw", "cloudsw"):
+            if interface.connected_endpoint.device.device_role.slug not in (
+                "asw",
+                "cloudsw",
+            ):
                 continue
 
             prefixes = defaultdict(list)
@@ -299,7 +304,10 @@ class Network(Report):
 
                 prefix = family_prefixes[0]
                 for ip in ips[family]:
-                    if ip.address.network != prefix.prefix.network or ip.address.prefixlen != prefix.prefix.prefixlen:
+                    if (
+                        ip.address.network != prefix.prefix.network
+                        or ip.address.prefixlen != prefix.prefix.prefixlen
+                    ):
                         self.log_failure(
                             interface.device,
                             f"{ip.address} does not match connected Vlan "
@@ -327,9 +335,9 @@ class Network(Report):
         for device in Device.objects.filter(device_type__slug="qfx5120-48y-8c"):
             port_blocks = {}
             device_failed = False
-            for interface in device.interfaces.exclude(type="virtual").exclude(
-                mgmt_only=True
-            ):
+            for interface in device.interfaces.exclude(
+                type__in=("virtual", "lag")
+            ).exclude(mgmt_only=True):
                 try:
                     port = int(interface.name.split(":")[0].split("/")[-1])
                 except ValueError:
