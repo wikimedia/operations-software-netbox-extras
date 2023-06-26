@@ -29,6 +29,7 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "cloudcephosd",
     "clouddb",
     "cloudnet",
+    "cloudservices",
     "cloudvirt",
     "cloudvirt-wdqs",
     "db",
