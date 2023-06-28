@@ -488,7 +488,7 @@ class Importer:
         nbiface.save()
         return nbiface
 
-    def _update_int_relations(self, device, nbiface, int_puppet_facts):
+    def _update_int_relations(self, device, nbiface, int_puppet_facts, is_vm):
         """ Sets or updates interface link parents, bridge membership and vlan settings
             as required
 
@@ -496,6 +496,7 @@ class Importer:
                 device: Netbox device object
                 nbiface: Netbox interface object
                 int_puppet_facts: puppetdb networking facts for the specific interface
+                is_vm: if the current device is a Virtual Machine
 
             Returns: None
         """
@@ -509,8 +510,8 @@ class Importer:
                 setattr(nbiface, nb_parent_type, parent)
                 self.log_info(f"Attach interface {nbiface.name} to {parent_type} {parent.name}")
 
-        # If it's a special type of int set type
-        if "kind" in int_puppet_facts:
+        # If it's a special type of int set type (physical only)
+        if "kind" in int_puppet_facts and not is_vm:
             if int_puppet_facts['kind'] == "vlan":
                 # Make sure it's virtual and access vlan set on it, plus tagged on its parent
                 nbiface.type = InterfaceTypeChoices.TYPE_VIRTUAL
@@ -645,7 +646,7 @@ class Importer:
                         nbiface = self._make_interface(device, iface, net_driver, is_vdev, mtu)
 
                 # Update interface parent, bridge and set vlans if needed
-                self._update_int_relations(device, nbiface, int_puppet_facts)
+                self._update_int_relations(device, nbiface, int_puppet_facts, is_vm)
 
             # FIXME /32 bug things here
             vipexempt = any([r.match(device.name) for r in NO_VIP_RE])
