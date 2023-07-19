@@ -16,6 +16,8 @@ INTERFACES_REGEXP = re.compile(
                 r"^[a-z]{1,4}(\d+){0,1}(\.\d+){0,1}$",  # typical device names (eg. eth0, vlan.900, etc)
                 r"^\d+$",  # Netgear switch (just numbers)
                 r"^Ethernet\d+$",  # SONiC (eg. Ethernet1)
+                r"^Loopback\d+$",  # SONiC (eg. Loopback0)
+                r"^Management\d+$",  # SONiC (eg. Management0)
             )
         )
     )
