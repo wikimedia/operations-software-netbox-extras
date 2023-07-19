@@ -19,6 +19,9 @@ class Main(CustomValidator):
             if "." not in instance.dns_name:
                 self.fail("Invalid DNS name: no dot found, it must be an FQDN, not a hostname")
 
+            if getattr(instance.assigned_object, 'name', None) == 'mgmt' and instance.dns_name.split('.')[1] != 'mgmt':
+                self.fail("Invalid DNS name: '.mgmt.' must be present when assigned to a mgmt interface")
+
             allowed = re.compile(r"(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
             if not all(allowed.match(x) for x in instance.dns_name.split(".")):
                 self.fail("Invalid DNS name: must be a valid FQDN")
