@@ -18,6 +18,7 @@ INTERFACES_REGEXP = re.compile(
                 r"^Ethernet\d+$",  # SONiC (eg. Ethernet1)
                 r"^Loopback\d+$",  # SONiC (eg. Loopback0)
                 r"^Management\d+$",  # SONiC (eg. Management0)
+                r"^Vlan\d+$",  # SONiC (eg. Vlan1234)
             )
         )
     )
