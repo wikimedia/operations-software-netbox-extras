@@ -8,6 +8,11 @@ from dcim.models import Device
 from extras.validators import CustomValidator
 from wmflib.constants import DATACENTER_NUMBERING_PREFIX
 
+
+# Temporary hack for the esams->knams migration
+DATACENTER_NUMBERING_PREFIX["knams"] = "3"
+###
+
 ROLES_OK_NO_ASSET_TAG = ("patch-panel",)
 ROLES_OK_NO_SERIAL = ("cablemgmt", "storagebin", "optical-device", "patch-panel")
 STATUS_DECOM = (
