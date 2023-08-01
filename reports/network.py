@@ -337,7 +337,7 @@ class Network(Report):
             device_failed = False
             for interface in device.interfaces.exclude(
                 type__in=("virtual", "lag")
-            ).exclude(mgmt_only=True):
+            ).exclude(mgmt_only=True).exclude(enabled=False):
                 try:
                     port = int(interface.name.split(":")[0].split("/")[-1])
                 except ValueError:
