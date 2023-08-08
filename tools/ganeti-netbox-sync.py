@@ -110,7 +110,6 @@ class Netbox:
 
     def __post_init__(self) -> None:
         """Initialize additional instance variables."""
-        self.linux_id = self.api.dcim.platforms.get(slug="linux").id
         self.server_id = self.api.dcim.device_roles.get(slug="server").id
 
     def _create_resource(self, resource: str, func: Callable, data: Dict) -> Optional[pynetbox.core.response.Record]:
@@ -244,7 +243,7 @@ class NetboxCluster(Netbox):
             return existing
 
         data = {key: value for key, value in orig_data.items() if key != "primary_node"}
-        data.update({"cluster": self.cluster.id, "platform": self.linux_id, "role": self.server_id})
+        data.update({"cluster": self.cluster.id, "role": self.server_id})
         vm = self._create_resource("VM", self.api.virtualization.virtual_machines.create, data)
         if not vm:
             raise RuntimeError(f'Failed to create VM {orig_data["name"]} in cluster {self.cluster}')
@@ -391,11 +390,6 @@ class GanetiNetboxSyncer:
                 logger.debug("Updating %s on %s %d -> %d", field, netbox_vm.name, curr, new)
                 setattr(netbox_vm, field, new)
                 updated = True
-
-        if netbox_vm.platform.id != self.netbox.linux_id:
-            logger.debug("Updating platform on %s %s -> Linux", netbox_vm.name, netbox_vm.platform.name)
-            netbox_vm.platform = self.netbox.linux_id
-            updated = True
 
         if netbox_vm.status.value != ganeti_instance["status"]:
             logger.debug(
