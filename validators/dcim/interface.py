@@ -41,7 +41,7 @@ class Main(CustomValidator):
         if (
             hasattr(instance.connected_endpoint, "device")
             and instance.device.device_role.slug in NETWORK_ROLES  # Network devices
-            and instance.mtu != 9192  # Ignore good MTU
+            and instance.mtu not in (9000, 9192)  # Ignore good MTU (NTT VPLS is 9000 max.)
             and not instance.lag  # Ignore LAG members
             and not (
                 instance.device.tenant and instance.device.tenant.slug == "fr-tech"
