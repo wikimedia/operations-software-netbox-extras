@@ -25,11 +25,8 @@ INCLUDE_DEVICE_ROLES = ("asw", "msw", "cr", "mr", "pfw", "pdu", "cloudsw")
 # Sites to exclude
 EXCLUDE_SITES = ()
 
-# Query filters for excluding certain models that don't seem to report correctly to LibreNMS
-# or are unmanaged.
-MODEL_EXCLUDES = Q(
-    device_type__manufacturer__slug="eaton"
-)  # Doesn't report its vendor in  LibreNMS description/hardware
+# Query filters for excluding certain models that don't seem to report correctly to LibreNMS or are unmanaged.
+MODEL_EXCLUDES = Q()
 
 INVENTORY_EXCLUDES = Q(name="FPM Board")
 
