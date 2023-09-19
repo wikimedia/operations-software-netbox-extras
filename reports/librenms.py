@@ -44,7 +44,13 @@ DEVICE_EXCLUDES = Q(device_type__slug="srx1500", name__contains="pfw3b")
 INVENTORY_MANUFACTURERS = ("juniper",)
 
 # Some minor hacks for inventory items (keyed by netbox 'vendor " " model')
-MODEL_EQUIVS = {"juniper ex4300-48t": "juniper routing engine"}
+MODEL_EQUIVS_INVENTORY = {"juniper ex4300-48t": "juniper routing engine"}
+
+# See T331519
+MODEL_EQUIVS_DEVICES = {"qfx5120-48y-afi": "jnp48y8c-chas",
+                        "qfx5120-48y-afi2": "jnp48y8c-chas",
+                        "qfx5120-32c-afi": "qfx5120-32c",
+                        "qfx5120-32c-afi2": "qfx5120-32c"}
 
 
 class LibreNMSData:
@@ -217,12 +223,12 @@ class LibreNMS(Report):
             nb_vendor_model_string = " ".join((nb_vendor_string, nb_model_string))
             # Either the hardware or description has both the vendor and the model, discretely.
             if device.serial in self.librenms.devices:
-                if (
-                    nb_vendor_string in self.librenms.devices[device.serial]["hardware"]
-                    or nb_vendor_string in self.librenms.devices[device.serial]["description"]
-                ) and (
-                    nb_model_string in self.librenms.devices[device.serial]["hardware"]
-                    or nb_model_string in self.librenms.devices[device.serial]["description"]
+                lnms_device_hardware = self.librenms.devices[device.serial]["hardware"]
+                lnms_device_description = self.librenms.devices[device.serial]["description"]
+                lnms_device_harddesc = lnms_device_hardware + " " + lnms_device_description
+                if nb_vendor_string in lnms_device_harddesc and (
+                    nb_model_string in lnms_device_harddesc
+                    or MODEL_EQUIVS_DEVICES.get(nb_model_string, "BADMATCH") in lnms_device_harddesc
                 ):
                     success += 1
                 elif device.site.slug not in EXCLUDE_SITES:
@@ -249,7 +255,7 @@ class LibreNMS(Report):
                         nb_vendor_string in librenms_vendor_model_string
                         and nb_model_string in librenms_vendor_model_string
                     )
-                    or MODEL_EQUIVS.get(nb_vendor_model_string, "BADMATCH") in librenms_vendor_model_string
+                    or MODEL_EQUIVS_INVENTORY.get(nb_vendor_model_string, "BADMATCH") in librenms_vendor_model_string
                 ):
                     success += 1
                 elif device.site.slug not in EXCLUDE_SITES:
