@@ -16,7 +16,7 @@ from extras.scripts import Script
 class GetHosts(Script):
     class Meta:
         name = "Capirca hosts definitions"
-        description = "Returns all the Netbox hosts IPs and VIPs in a Capirca NETWORKS.net format."
+        description = "Returns all the Netbox hosts IPs, Anycast IPs and VIPs in a Capirca NETWORKS.net format."
 
     def process_ipaddress(self, ipaddress):
         # Several types of IPs:
@@ -37,7 +37,7 @@ class GetHosts(Script):
         elif ipaddress.assigned_object_type == self.vm_ct and ipaddress.assigned_object:
             # get the hostname
             hostname = ipaddress.assigned_object.virtual_machine.name
-        elif ipaddress.role == "vip" and ipaddress.dns_name:
+        elif ipaddress.role in ("vip", "anycast") and ipaddress.dns_name:
             hostname = ipaddress.dns_name
         else:
             return None, None
