@@ -74,7 +74,7 @@ class VirtualMachines(Report, PuppetDBDataMixin):
 
     def test_netbox_vms_in_puppetdb(self):
         """Check that all Netbox VMs are in PuppetDB VMs."""
-        vms = VirtualMachine.objects.exclude(status=DeviceStatusChoices.STATUS_OFFLINE)
+        vms = VirtualMachine.objects.filter(tenant__isnull=True).exclude(status=DeviceStatusChoices.STATUS_OFFLINE)
         puppetdb_isvirtual = self._get_puppetdb_fact("is_virtual")
         success = 0
         for vm in vms:
