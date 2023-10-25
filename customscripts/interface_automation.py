@@ -40,7 +40,8 @@ IMPORT_STATUS_ALLOWLIST = ("active",
 # Prefix of neighbor interfaces names from LLDP to be considered
 SWITCH_INTERFACES_PREFIX_ALLOWLIST = ("et-",
                                       "xe-",
-                                      "ge-")
+                                      "ge-",
+                                      "Ethernet")
 
 # Hostname regexes that are immune to VIP removal because of a bug in provisioning them
 # this is a temporary work around until 618766 is merged. The "VIP"s on these hosts will
@@ -330,7 +331,8 @@ class Importer:
 
     def _create_z_nbiface(self, z_nbdevice, z_iface, mtu=None, iface_fmt=None):
         """Create new int on device and return netbox object."""
-        if z_iface.startswith(SWITCH_INTERFACES_PREFIX_ALLOWLIST):
+        if (z_iface.startswith(SWITCH_INTERFACES_PREFIX_ALLOWLIST)
+                and z_nbdevice.device_type.manufacturer.slug == 'juniper'):
             self._delete_orphan_nbiface(z_nbdevice, z_iface)
 
         if not iface_fmt:
@@ -1085,7 +1087,7 @@ class MoveServer(Script, Importer):
             return
 
         if z_nbdevice.virtual_chassis:
-            zint_vc_id = int(z_iface.split("-")[1].split("/")[0])
+            zint_vc_id = int(z_iface.split("-")[1].split("/")[0])  # Juniper VC only
             if zint_vc_id != z_nbdevice.vc_position:
                 self.log_failure(f"{device}: Interface name {z_iface} invalid, first digit of port "
                                  f"number should be {z_nbdevice.vc_position}, matching {z_nbdevice.name} "
@@ -1267,14 +1269,14 @@ class ProvisionServerNetwork(Script, Importer):
             return
 
         if z_nbdevice.virtual_chassis:
-            zint_vc_id = int(z_iface.split("-")[1].split("/")[0])
+            zint_vc_id = int(z_iface.split("-")[1].split("/")[0])  # Juniper VC only
             if zint_vc_id != z_nbdevice.vc_position:
                 self.log_failure(f"{device}: Interface name {z_iface} invalid, first digit of port "
                                  f"number should be {z_nbdevice.vc_position}, matching {z_nbdevice.name} "
                                  "virtual-chassis postition.")
                 return
         else:
-            if int(z_iface.split("-")[1].split("/")[0]) != 0:
+            if z_nbdevice.device_type.manufacturer.slug == 'juniper' and int(z_iface.split("-")[1].split("/")[0]) != 0:
                 self.log_failure(f"{device}: Interface name {z_iface} invalid, first digit of port "
                                  f"number should be 0 as {z_nbdevice.name} is not a virtual chassis.")
                 return
