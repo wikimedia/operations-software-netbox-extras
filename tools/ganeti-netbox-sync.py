@@ -213,7 +213,7 @@ class NetboxCluster(Netbox):
             return
 
         logger.info("Running PuppetDB import script for %d VMs.", len(reimport))
-        url = f"{self.api.base_url}/extras/scripts/interface_automation.ImportPuppetDB/"
+        url = f"{self.api.base_url}/extras/scripts/import_server_facts.ImportPuppetDB/"
         headers = {"Authorization": f"Token {self.api.token}"}
         data = {"data": {"device": " ".join(reimport)}, "commit": not self.dry_run}
         result = self.api.http_session.post(url, headers=headers, json=data)
