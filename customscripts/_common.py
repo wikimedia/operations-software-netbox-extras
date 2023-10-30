@@ -1,12 +1,14 @@
 import ipaddress
 import re
 
+from typing import Optional
+
 from django.core.exceptions import ObjectDoesNotExist
 
 from django.contrib.contenttypes.models import ContentType
 
 from dcim.choices import CableTypeChoices, InterfaceTypeChoices, LinkStatusChoices
-from dcim.models import Cable, Device, Interface, VirtualChassis
+from dcim.models import Cable, Device, Interface, Site, VirtualChassis
 from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix, VLAN
 from ipam.filtersets import PrefixFilterSet
@@ -44,6 +46,12 @@ NO_VIP_RE = (re.compile(r"^aqs.*"),
              re.compile(r"^restbase.*"),
              re.compile(r"^sessionstore.*"))
 
+IFACE_TYPE_TO_JUNIPER_PREFIX = {
+    InterfaceTypeChoices.TYPE_1GE_FIXED: 'ge-',
+    InterfaceTypeChoices.TYPE_10GE_SFP_PLUS: 'xe-',
+    InterfaceTypeChoices.TYPE_25GE_SFP28: 'et-'
+}
+
 interface_ct = ContentType.objects.get_for_model(Interface)
 
 
@@ -52,6 +60,61 @@ def format_logs(logs):
     return "\n".join(
         "[{level}] {msg}".format(level=level, msg=message) for level, message in logs
     )
+
+
+def port_to_iface(port: int, nbdevice: Device, interface_type: str) -> Optional[str]:
+    """Converts a numerical port ID, device and type to a logical interface name.
+
+    Taking into consideration vendor specific naming, and devices constraints.
+    Only for access ports.
+
+    Arguments:
+        port (int): Numerical port ID on the switch (eg. label).
+        nbdevice (dcim.models.Device): Netbox device where the port is located.
+        interface_type (str): Interface type/speed in a `netbox/dcim/choices.py` format.
+
+    Returns:
+        str: the logical interface name.
+        None: No valid interface name possible (error)
+
+    """
+    # Specific to our only 1G model
+    if interface_type != InterfaceTypeChoices.TYPE_1GE_FIXED and nbdevice.device_type.slug == "ex4300-48t":
+        # TODO once upgraded: raise AbortScript("Switch is 1G only, interface type must be 1G")
+        return None
+
+    if nbdevice.device_type.manufacturer.slug == 'juniper':
+        prefix = IFACE_TYPE_TO_JUNIPER_PREFIX[interface_type]
+        if nbdevice.virtual_chassis:  # VCs are only Juniper
+            return f"{prefix}{str(nbdevice.vc_position)}/0/{str(port)}"
+        return f"{prefix}0/0/{str(port)}"
+
+    elif nbdevice.device_type.manufacturer.slug == 'dell':
+        return f"Ethernet{str(port-1)}"
+    else:
+        # TODO once upgraded: raise AbortScript("Unsupported switch vendor (must be Dell or Juniper)")
+        return None
+
+
+def duplicate_cable_id(cable_id: int, site: Site) -> bool:
+    """Check if the cable ID (label) is already in use at a given site.
+
+    Arguments:
+        cable_id (int): ID/label printed on the cable.
+        site (dcim.models.Site): Netbox site where to check for duplicates.
+
+    Returns:
+        bool: The cable ID is already used or not.
+
+    """
+
+    cables_with_same_id = Cable.objects.filter(label=cable_id)
+    for cable in cables_with_same_id:
+        if cable.termination_a_type == interface_ct and cable.termination_a.device.site == site:
+            return True
+        if cable.termination_b_type == interface_ct and cable.termination_b.device.site == site:
+            return True
+    return False
 
 
 class Importer:
