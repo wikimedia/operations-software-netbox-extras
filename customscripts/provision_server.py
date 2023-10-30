@@ -118,6 +118,7 @@ class ProvisionServerNetwork(Script, Importer):
         query_params={
             'role': 'server',
             'status': ('inventory', 'planned'),
+            'has_primary_ip': False,
         }
     )
 
