@@ -10,7 +10,7 @@ from dcim.models import Device, Interface
 from extras.scripts import BooleanVar, ChoiceVar, FileVar, IntegerVar, ObjectVar, Script, StringVar
 from ipam.models import IPAddress, Prefix, VLAN
 
-from _common import format_logs, port_to_iface, duplicate_cable_id, Importer
+from _common import find_tor, format_logs, port_to_iface, duplicate_cable_id, Importer
 
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"
@@ -121,17 +121,6 @@ class ProvisionServerNetwork(Script, Importer):
         }
     )
 
-    z_nbdevice = ObjectVar(
-        required=True,
-        label="Switch",
-        description=("Top of rack switch. (Required)"),
-        model=Device,
-        query_params={
-            'role': ('asw', 'cloudsw'),
-            'status': ('active', 'staged'),
-        }
-    )
-
     z_port = IntegerVar(label="Switch port",
                         description="Physical port number (0-48) (Required)",
                         required=True,
@@ -156,6 +145,15 @@ class ProvisionServerNetwork(Script, Importer):
         description=("Skip the generation of the IPv6 DNS records. Enable if the devices don't yet fully support "
                      "IPv6."),
     )
+
+    z_nbdevice = ObjectVar(
+        label="Switch",
+        required=False,
+        description=("Top of rack switch, optional, if not set will try to find it automatically."),
+        model=Device,
+        query_params={'role': ('asw', 'cloudsw'), }
+    )
+
     cassandra_instances = ChoiceVar(
         required=False,
         choices=[(i, i) for i in range(6)],
@@ -213,11 +211,6 @@ class ProvisionServerNetwork(Script, Importer):
             )
             return
 
-        if z_nbdevice.status not in ('active', 'staged'):
-            self.log_failure(f"{device}: switch {z_nbdevice} with status {z_nbdevice.status}, "
-                             "expected Active or Staged, skipping.")
-            return
-
         if not device.rack:
             self.log_failure(f"{device}: missing rack information, skipping.")
             return
@@ -228,14 +221,20 @@ class ProvisionServerNetwork(Script, Importer):
             )
             return
 
-        if z_nbdevice.device_role.slug not in ('asw', 'cloudsw'):
-            self.log_failure(f"{device}: switch {z_nbdevice} with role {z_nbdevice.device_role}, "
-                             "only switches are supported, skipping.")
-            return
-
         if cable_id and duplicate_cable_id(cable_id, device.site):
             self.log_failure(f"Cable ID {cable_id} already assigned in {device.site.slug}.")
             return
+
+        if not z_nbdevice:
+            z_nbdevice = find_tor(device)
+            if not z_nbdevice:
+                self.log_failure(f"{device}: Can't find an adequate top-or-rack switch in rack {device.rack}. "
+                                 "please double check or select it manually.")
+                return
+        else:
+            if z_nbdevice.rack != device.rack:
+                self.log_failure(f"{device}: switch {z_nbdevice} not in same rack as server.")
+                return
 
         ifaces = device.interfaces.all()
         #  If the device have interface(s)
