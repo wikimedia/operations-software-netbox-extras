@@ -93,40 +93,25 @@ class MoveServer(Script, Importer):
                                  "virtual-chassis postition.")
                 return
 
-        # find main interface
-        ifaces_connected = device.interfaces.filter(mgmt_only=False).exclude(cable=None)
-        if len(ifaces_connected) != 1:
-            ifaces_list = ", ".join(i.name for i in ifaces_connected)
-            self.log_failure(f"{device}: either 0 or more than 1 connected interface: {ifaces_list},"
-                             f" please update Netbox manually, skipping.")
+        nbiface = self.find_main_interface(device)
+        if not nbiface:
             return
-        # At this point there is only the one.
-        nbiface = ifaces_connected[0]
-        nbcable = nbiface.cable
-        # Find old switch interface, one one side or the other of the cable
-        if nbcable.termination_a != nbiface:
-            z_old_nbiface = nbcable.termination_a
-        elif nbcable.termination_b != nbiface:
-            z_old_nbiface = nbcable.termination_b
+        z_old_nbiface = self.find_remote_interface(nbiface)
 
         # Configure the new switch interface
         z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type,
                                            list(z_old_nbiface.tagged_vlans.all()))
         if z_nbiface.cable:
+            # TODO replace with raise AbortScript
             self.log_failure(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), skipping.")
             return
 
         # Clean the old one
-        z_old_nbiface.enabled = False
-        z_old_nbiface.mode = ''
-        z_old_nbiface.untagged_vlan = None
-        z_old_nbiface.mtu = None
-        z_old_nbiface.tagged_vlans.set([])
-        z_old_nbiface.save()
+        self.clean_interface(z_old_nbiface)
         self.log_success(f"{device}: reset old switch interface {z_old_nbiface.device}:{z_old_nbiface}.")
 
         # Remove the old cable
-        nbcable.delete()
+        nbiface.cable.delete()
         # After deleting the cable refresh the interface, otherwise
         # nbiface.cable still returns the old cable
         nbiface.refresh_from_db()
@@ -140,3 +125,63 @@ class MoveServer(Script, Importer):
         device.position = int(position)
         device.save()
         self.log_success(f"{device}: moved to rack {device.rack}, U{device.position}.")
+
+
+class MoveServersUplinks(Script, Importer):
+    class Meta:
+        name = "Move all the servers' uplinks from old to new ToR."
+        description = "Assigns port number based on the rack U number of the server."
+        commit_default = False
+
+    new_switch = ObjectVar(
+        required=True,
+        label="New switch",
+        description=("New top of rack switch. (Required)"),
+        model=Device,
+        query_params={
+            'role': ('asw', 'cloudsw'),
+            'status': ('active', 'staged', 'planned'),
+        }
+    )
+
+    def run(self, data, commit):
+        """Run the script and return all the log messages."""
+        self.log_info(f"Called with parameters: {data}")
+        self.move_uplinks(data)
+        return format_logs(self.log)
+
+    def move_uplinks(self, data):
+        """Process all servers in the rack."""
+        new_switch = data['new_switch']
+
+        # Get all servers from the same rack as the new switch
+        all_servers = Device.objects.filter(device_role__slug='server',
+                                            status='active',
+                                            tenant__isnull=True,
+                                            rack=new_switch.rack)
+
+        server_count = 0
+        for server in all_servers:
+            server_count += 1
+            interface = self.find_primary_interface(server)
+            if not interface:
+                continue
+            z_old_nbiface = self.find_remote_interface(interface)
+            # Only works with Juniper
+            z_iface = f"{z_old_nbiface.name.split('-')[0]}-0/0/{str(server.position - 1)}"
+
+            # Configure the new switch interface
+            z_nbiface = self._update_z_nbiface(new_switch, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type,
+                                               list(z_old_nbiface.tagged_vlans.all()))
+
+            # Clean the old one
+            self.clean_interface(z_old_nbiface)
+            label = str(interface.cable.label)
+            # Remove the old cable
+            interface.cable.delete()
+            # After deleting the cable refresh the interface, otherwise
+            # interface.cable still returns the old cable
+            interface.refresh_from_db()
+            # Create the new one
+            self._create_cable(interface, z_nbiface, label=label)
+            self.log_success(f"{server} ({server_count}/{len(all_servers)}): All done.")

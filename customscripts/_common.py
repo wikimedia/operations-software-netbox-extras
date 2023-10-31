@@ -833,12 +833,13 @@ class Importer:
         self.log_success(f"{nbiface.device}: created cable {cable}")
         self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}")
 
-    def _update_z_nbiface(self, z_nbdevice, z_iface, vlan, iface_fmt=None, tagged_vlans=None):
+    def _update_z_nbiface(self, z_nbdevice, z_iface, vlan, iface_fmt=None, tagged_vlans=None) -> Interface:
         """Create switch interface if needed and set vlan info."""
         try:
             # Try to find if the interface exists
             z_nbiface = z_nbdevice.interfaces.get(name=z_iface)
             if z_nbiface.cable:
+                # TODO replace with raise AbortScript
                 self.log_warning(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), "
                                  f"Skipping interface configuration, please do it manually")
                 return z_nbiface
@@ -858,3 +859,35 @@ class Importer:
         z_nbiface.save()
         self.log_success(f"{z_nbiface.device}:{z_nbiface} configured vlan.")
         return z_nbiface
+
+    def find_primary_interface(self, device: Device) -> Optional[Interface]:
+        """For regular servers, return the primary interface."""
+        ifaces_connected = device.interfaces.filter(mgmt_only=False, cable__isnull=False)
+        if len(ifaces_connected) != 1:
+            ifaces_list = ", ".join(i.name for i in ifaces_connected)
+            # TODO replace with raise AbortScript
+            self.log_failure(f"{device}: either 0 or more than 1 connected interface: {ifaces_list},"
+                             f" please update Netbox manually, skipping.")
+            return None
+        # At this point there is only the one.
+        return ifaces_connected[0]
+
+    def clean_interface(self, interface: Interface):
+        """Reset the interface's attributes."""
+        interface.enabled = False
+        interface.mode = ''
+        interface.untagged_vlan = None
+        interface.mtu = None
+        interface.tagged_vlans.set([])
+        interface.save()
+
+    def find_remote_interface(self, interface: Interface) -> Optional[Interface]:
+        """Returns the remote side connected to an interface."""
+        # TODO in theory can have circuit termination and other types of object terminations
+        cable = interface.cable
+        if not cable:
+            return
+        if cable.termination_a != interface:
+            return cable.termination_a
+        elif cable.termination_b != interface:
+            return cable.termination_b
