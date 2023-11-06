@@ -1,14 +1,11 @@
 import configparser
-import json
 
 import requests
-
-from django.core.exceptions import ObjectDoesNotExist
 
 from _common import Importer, CONFIGFILE
 
 from dcim.models import Device
-from extras.scripts import BooleanVar, Script, StringVar, TextVar
+from extras.scripts import Script, StringVar
 from virtualization.models import VirtualMachine
 
 
@@ -79,66 +76,5 @@ class ImportPuppetDB(Script, Importer):
                 continue
             messages.extend(self._import_interfaces_for_device(device, net_driver, networking, lldp, True))
             self.log_info(f"{device} done.")
-
-        return "\n".join(messages)
-
-
-class ImportNetworkFacts(Script, Importer):  # TODO is that used? can we delete it?
-    class Meta:
-        name = "Import Interfaces from a JSON blob"
-        description = "Accept a JSON blob and resolve interface and IP address differences."
-        commit_default = False
-
-    device = StringVar(description="The device name to import interfaces and IP addresses for.",
-                       label="Device")
-    jsonblob = TextVar(description=("A JSON Dictionary with at least the `networking` key similar to what PuppetDB "
-                                    "outputs. It may contain a `net_driver` key which specifies the speed of each"
-                                    "interface, but the devices will take the default value if this is not specified."),
-                       label="Facts JSON")
-    statusoverride = BooleanVar(description=("Normally only hosts of specific status are considered for import, if "
-                                             "this setting is set, the script will ignore the host's status."),
-                                label="Status Override")
-
-    def __init__(self, *args, **vargs):
-        super().__init__(*args, **vargs)
-
-    def _is_invalid_facts(self, facts):
-        """We can very validate facts beyond this level, things will just explode if the facts are incorrect however."""
-        if "networking" not in facts:
-            self.log_failure(f"Can't find `networking` in facts JSON."
-                             f"Keys in blob are: {list(facts.keys())}")
-            return True
-        if "net_driver" not in facts:
-            self.log_warning("Can't find `net_driver` in facts JSON. Using default speed for all interfaces.")
-            return True
-
-    def run(self, data, commit):
-        """Execute script as per Script interface."""
-        facts = json.loads(data["jsonblob"])
-        if self._is_invalid_facts(facts):
-            return ""
-
-        is_vm = False
-        try:
-            device = Device.objects.get(name=data["device"])
-            if ((not data["statusoverride"]) and (not self._validate_device(device))):
-                return ""
-        except ObjectDoesNotExist:
-            try:
-                device = VirtualMachine.objects.get(name=data["device"])
-                is_vm = True
-            except ObjectDoesNotExist:
-                self.log_failure(f"Not devices found by the name {data['device']}")
-                return ""
-
-        self.log_info(f"Processing device {device}")
-        net_driver = {}
-        if "net_driver" in facts:
-            net_driver = facts["net_driver"]
-        lldp = {}
-        if "lldp" in facts:
-            lldp = facts["lldp"]
-        messages = self._import_interfaces_for_device(device, net_driver, facts["networking"], lldp, is_vm)
-        self.log_info(f"{device} done.")
 
         return "\n".join(messages)
