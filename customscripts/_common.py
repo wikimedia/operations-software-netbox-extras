@@ -523,20 +523,19 @@ class Importer:
             self._create_cable(nbiface, z_nbiface, label=label)
 
     def _get_parent_interface(self, device, int_puppet_facts, parent_type):
-        """Returns the matching parent interface if any. parent_type can be 'parent_link'
-           (for vlan sub-int parent physical), or 'parent_bridge' (for bridge member parent
-           bridge).
+        """Returns the Netbox interface object referenced in another interface's
+           puppet facts as its 'parent_bridge' or 'parent_link'.
 
             Inputs:
                 device:      netbox device object the interface belongs to
                 int_puppet_facts:  puppetdb networking facts for the specific interface
-                parent_type: either 'parent_link' if we want to fetch the netbox interface's
-                             associated (sub-int) 'parent' interface, or 'parent_bridge' if we
-                             want to fetch the netbox interface's associated 'bridge' interface.
+                parent_type: either 'parent_link' if we want to fetch the physical network
+                             interface of a vlan sub-int, or 'parent_bridge' if we are
+                             trying to fetch a bridge device.
 
             Returns:
-                Netbox interface object of requested type, or None if iface has no assocaited
-                interface of that type.
+                Netbox interface object of parent.  None if the puppet facts don't list
+                any parent of requested type, or they do but no NB int of that name exists.
         """
         try:
             return Interface.objects.get(name=int_puppet_facts[parent_type], device=device)
@@ -586,10 +585,16 @@ class Importer:
         """
 
         # Create attachment to related interfaces
-        for parent_type in ['bridge', 'link']:
-            parent = self._get_parent_interface(device, int_puppet_facts, f'parent_{parent_type}')
-            # What we call parent_link in puppetdb, NB calls parent
-            nb_parent_type = 'parent' if parent_type == 'link' else parent_type
+        for parent_type in ['parent_bridge', 'parent_link']:
+            parent = self._get_parent_interface(device, int_puppet_facts, parent_type)
+            if parent_type in int_puppet_facts and not parent:
+                self.log_failure(f"PuppetDB reports {nbiface.name} has {parent_type} called"
+                                 f"{{ int_puppet_facts[parent_type] }} but no matching int in Netbox")
+                # TODO: replace with raise AbortScript, for now continue as it won't break anything and edge-case
+                continue
+            # NB uses differnt terms for related ints
+            nb_parent_type = 'parent' if parent_type == 'parent_link' else 'bridge'
+            # If parent on Netbox int doesn't match what PuppetDB says then set it
             if getattr(nbiface, nb_parent_type, None) != parent:
                 setattr(nbiface, nb_parent_type, parent)
                 self.log_info(f"Attach interface {nbiface.name} to {parent_type} {parent.name}")
