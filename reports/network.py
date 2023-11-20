@@ -24,14 +24,7 @@ SWITCHES_ROLES = ("asw", "msw", "cloudsw")
 NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw")
 ACCESS_INTERFACES_PREFIX = ("et-", "xe-", "ge-")
 NO_V6_DEVICE_NAME_PREFIXES = (
-    "cloudbackup",
-    "cloudcephmon",
-    "cloudcephosd",
     "clouddb",
-    "cloudnet",
-    "cloudservices",
-    "cloudvirt",
-    "cloudvirt-wdqs",
     "db",
     "dbprov",
     "dbproxy",
