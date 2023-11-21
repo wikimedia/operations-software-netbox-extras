@@ -33,8 +33,6 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "es",
     "ganeti",
     "graphite",
-    "kafka-logging",
-    "logstash",
     "maps",
     "mc",
     "mc-gp",
