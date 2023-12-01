@@ -42,7 +42,6 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "ores",
     "parse",
     "pc",
-    "rdb",
     "restbase",
     "restbase-dev",
     "sessionstore",
