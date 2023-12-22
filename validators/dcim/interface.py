@@ -2,6 +2,7 @@
 
 import re
 
+from dcim.choices import InterfaceTypeChoices
 from dcim.models import Interface
 from extras.validators import CustomValidator
 
@@ -26,9 +27,39 @@ INTERFACES_REGEXP = re.compile(
     )
 )
 
+TRIDENT3_DEVICES = ("qfx5120-48y-afi", "qfx5120-48y-afi2", "powerswitch-s5248f-on")
+VIRTUAL_TYPES = (
+    InterfaceTypeChoices.TYPE_VIRTUAL,
+    InterfaceTypeChoices.TYPE_BRIDGE,
+    InterfaceTypeChoices.TYPE_LAG,
+)
+
 
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
+
+    def _check_trident3_port(self, instance: Interface) -> None:
+        """Checks that the port speed is consistent with others in block due to Trident 3 constraint"""
+        logical_port = int(instance.name.replace("Ethernet", "").split("/")[-1])
+        block_start = logical_port - (logical_port % 4)
+        block_ports = range(block_start, block_start + 4)
+        device_ints = Interface.objects.filter(
+            device_id=instance.device.id, enabled=True, mgmt_only=False
+        ).exclude(type__in=VIRTUAL_TYPES).exclude(id=instance.id)
+        # The exclude "id=instance.id" is to prvent an error between an interface and itself
+        # For example when changing the type of an interface
+        for device_int in device_ints:
+            # Get logical port number from interface name
+            try:
+                port_num = int(device_int.name.replace("Ethernet", "").split("/")[-1])
+            except ValueError:
+                # Don't block the user if there is an improperly named interface on the switch
+                continue
+            if port_num <= 47 and port_num in block_ports and device_int.type != instance.type:
+                self.fail(
+                    f"Invalid type/speed '{instance.type}' (must be {device_int.type} "
+                    f"to match {device_int.name} within the same block)", field="type"
+                )
 
     def validate(self, instance, request):  # noqa: unused-argument
         """Mandatory entry point"""
@@ -78,3 +109,10 @@ class Main(CustomValidator):
                 if getattr(instance, attribute):
                     self.fail(f"Invalid {attribute} (must not be set on disabled interfaces)",
                               field=attribute if attribute != "count_ipaddresses" else None)
+        # Trident 3 switches ports blocks
+        if (
+            instance.type not in VIRTUAL_TYPES
+            and not instance.mgmt_only
+            and instance.device.device_type.slug in TRIDENT3_DEVICES
+        ):
+            self._check_trident3_port(instance)
