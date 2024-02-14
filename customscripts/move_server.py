@@ -167,6 +167,10 @@ class MoveServersUplinks(Script, Importer):
             if not interface:
                 continue
             z_old_nbiface = self.find_remote_interface(interface)
+            # Don't do anything if server is already connected to the 'new' switch
+            if z_old_nbiface.device == new_switch:
+                self.log_info(f"{server.name} already connected to {new_switch}, skipping.")
+                continue
             # Only works with Juniper
             z_iface = f"{z_old_nbiface.name.split('-')[0]}-0/0/{str(server.position - 1)}"
 
