@@ -2,6 +2,7 @@
 
 from django.contrib.contenttypes.models import ContentType
 
+from dcim.choices import LinkStatusChoices
 from dcim.models import Cable, Interface
 from extras.validators import CustomValidator
 
@@ -27,8 +28,10 @@ class Main(CustomValidator):
                 self.fail(f"Duplicate label with {cable_same_serial}")
         # Allow blank cables in core sites
         if (
-            not instance.label or not instance.label.strip()
-        ) and not self._core_site_server(instance):
+            (not instance.label or not instance.label.strip())
+            and not self._core_site_server(instance)
+            and not instance.status == LinkStatusChoices.STATUS_PLANNED
+        ):
             self.fail("Invalid label (must not be blank)")
 
     def _get_site_slug(self, cable):
