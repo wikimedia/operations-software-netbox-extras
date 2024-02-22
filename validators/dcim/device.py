@@ -18,7 +18,7 @@ STATUS_NAME_CAN_BE_ASSET = STATUS_DECOM + (DeviceStatusChoices.STATUS_PLANNED,)
 INVALID_ACTIVE_NAMES = ["future", "spare"]
 
 ASSET_TAG_RE = re.compile(
-    r"WMF\d{4,}"
+    r"WMF\d{4,5}"
 )  # Update the error message if you edit the regex
 TICKET_RE = re.compile(r"RT #\d{2,}|T\d{5,}")
 
@@ -72,7 +72,7 @@ class Main(CustomValidator):
                 self.fail("Missing asset tag")
             if not ASSET_TAG_RE.fullmatch(instance.asset_tag):
                 self.fail(
-                    "Invalid asset tag (must be (capitals) WMF then 4 or more digits)"
+                    "Invalid asset tag (must be (capitals) WMF then 4 or 5 digits)"
                 )
 
         # purchase_date
