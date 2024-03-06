@@ -35,7 +35,7 @@ class Main(CustomValidator):
             instance.device.device_role.slug in NETWORK_ROLES
             and not INTERFACES_REGEXP.fullmatch(instance.name)
         ):
-            self.fail("Invalid name (must match the INTERFACES_REGEXP options)")
+            self.fail("Invalid name (must match the INTERFACES_REGEXP options)", field="name")
 
         # MTU
         if (
@@ -49,7 +49,7 @@ class Main(CustomValidator):
             and instance.enabled  # Ignore disabled interfaces
             and not str(instance.name).startswith("vcp-")
         ):  # Ignore VC links
-            self.fail("Invalid MTU (must be 9192)")
+            self.fail("Invalid MTU (must be 9192)", field="mtu")
 
         # Attributes
         attributes = [
@@ -72,6 +72,5 @@ class Main(CustomValidator):
                 if attribute == "count_ipaddresses" and not instance.id:
                     continue
                 if getattr(instance, attribute):
-                    self.fail(
-                        f"Invalid {attribute} (must not be set on disabled interfaces)"
-                    )
+                    self.fail(f"Invalid {attribute} (must not be set on disabled interfaces)",
+                              field=attribute if attribute != "count_ipaddresses" else None)

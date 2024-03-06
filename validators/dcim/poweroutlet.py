@@ -10,4 +10,4 @@ class Main(CustomValidator):
         """Mandatory entry point"""
         # Name
         if not str(instance.name).isdigit():
-            self.fail("Invalid name (must be a non-negative integer)")
+            self.fail("Invalid name (must be a non-negative integer)", field="name")

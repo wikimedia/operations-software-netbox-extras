@@ -29,16 +29,14 @@ class Main(CustomValidator):
     def _validate_name(self, instance):
         """Validate the device's name"""
         if instance.name != instance.name.lower():
-            self.fail("Invalid name (must be lowercase)")
+            self.fail("Invalid name (must be lowercase)", field="name")
 
         if instance.status == DeviceStatusChoices.STATUS_ACTIVE and any(
             x in instance.name for x in INVALID_ACTIVE_NAMES
         ):
-            self.fail(
-                f"Invalid name (active device name must not contain {INVALID_ACTIVE_NAMES})"
-            )
+            self.fail(f"Invalid name (active device name must not contain {INVALID_ACTIVE_NAMES})", field="name")
         if "." in instance.name:
-            self.fail("Invalid name (must not contain a dot)")
+            self.fail("Invalid name (must not contain a dot)", field="name")
 
         if (
             instance.asset_tag
@@ -57,7 +55,8 @@ class Main(CustomValidator):
             host_id.group()[0]
         ):
             self.fail(
-                f"Invalid name (first digit of {host_id.group()} must match device's site {instance.site.slug} digit)"
+                f"Invalid name (first digit of {host_id.group()} must match device's site {instance.site.slug} digit)",
+                field="name"
             )
         # We could improve it once we got rid of all the hosts not matching this convention, like "flerovium".
 
@@ -69,60 +68,52 @@ class Main(CustomValidator):
         # asset_tag
         if instance.device_role.slug not in ROLES_OK_NO_ASSET_TAG:
             if instance.asset_tag is None:
-                self.fail("Missing asset tag")
+                self.fail("Missing asset tag", field="asset_tag")
             if not ASSET_TAG_RE.fullmatch(instance.asset_tag):
-                self.fail(
-                    "Invalid asset tag (must be (capitals) WMF then 4 or 5 digits)"
-                )
+                self.fail("Invalid asset tag (must be (capitals) WMF then 4 or 5 digits)", field="asset_tag")
 
         # purchase_date
         purchase_date = instance.cf["purchase_date"]
         if purchase_date is None:
-            self.fail("Missing purchase date")
+            self.fail("Missing purchase date", field="cf_purchase_date")
         if (
             datetime.date.fromisoformat(str(purchase_date))
             > datetime.datetime.today().date()
         ):
-            self.fail("Invalid purchase date (must not be in the future")
+            self.fail("Invalid purchase date (must not be in the future", field="cf_purchase_date")
 
         # ticket
         ticket = str(instance.cf["ticket"])
         if ticket is None:
-            self.fail("Missing procurement ticket")
+            self.fail("Missing procurement ticket", field="cf_ticket")
         if not TICKET_RE.fullmatch(ticket):
-            self.fail(
-                "Invalid procurement ticket (must start with RT or T then digits)"
-            )
+            self.fail("Invalid procurement ticket (must start with RT or T then digits)", field="cf_ticket")
 
         # serial
         if (instance.device_role.slug not in ROLES_OK_NO_SERIAL) and (
             instance.status not in STATUS_DECOM
         ):
             if instance.serial is None or instance.serial == "":
-                self.fail("Missing serial number")
+                self.fail("Missing serial number", field="serial")
             device_same_serial = Device.objects.filter(serial=instance.serial).first()
             if device_same_serial and device_same_serial != instance:
-                self.fail(f"Duplicate serial number with {device_same_serial}")
+                self.fail(f"Duplicate serial number with {device_same_serial}", field="serial")
 
         # status
         if (
             instance.device_role.slug == "server"
             and instance.status == DeviceStatusChoices.STATUS_STAGED
         ):
-            self.fail("Invalid role/status (servers must not use STAGED)")
+            self.fail("Invalid role/status (servers must not use STAGED)", field="status")
 
         # Rack
         if instance.status == DeviceStatusChoices.STATUS_OFFLINE and instance.rack:
-            self.fail(
-                "Invalid rack/status (OFFLINE devices most not have rack defined)"
-            )
+            self.fail("Invalid rack/status (OFFLINE devices most not have rack defined)", field="rack")
         if instance.status == DeviceStatusChoices.STATUS_ACTIVE and not instance.rack:
-            self.fail("Invalid rack/status (ACTIVE devices must have rack defined)")
+            self.fail("Invalid rack/status (ACTIVE devices must have rack defined)", field="rack")
         if (
             instance.device_type.u_height >= 1
             and instance.rack
             and not instance.position
         ):
-            self.fail(
-                "Invalid rack/position (device with U height and rack must have position)"
-            )
+            self.fail("Invalid rack/position (device with U height and rack must have position)", field="position")

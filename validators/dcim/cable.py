@@ -25,14 +25,14 @@ class Main(CustomValidator):
             if instance.id and cable_same_serial.id == instance.id:
                 return
             if self._get_site_slug(cable_same_serial) == self._get_site_slug(instance):
-                self.fail(f"Duplicate label with {cable_same_serial}")
+                self.fail(f"Duplicate label with {cable_same_serial}", field="label")
         # Allow blank cables in core sites
         if (
             (not instance.label or not instance.label.strip())
             and not self._core_site_server(instance)
             and not instance.status == LinkStatusChoices.STATUS_PLANNED
         ):
-            self.fail("Invalid label (must not be blank)")
+            self.fail("Invalid label (must not be blank)", field="label")
 
     def _get_site_slug(self, cable):
         """Get a representative site slug given a cable.

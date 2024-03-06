@@ -10,6 +10,6 @@ class Main(CustomValidator):
         """Mandatory entry point"""
         # Slug
         if len(instance.slug) != 5:
-            self.fail("Invalid slug (must be 5 chars)")
+            self.fail("Invalid slug (must be 5 chars)", field="slug")
         if instance.slug != instance.slug.lower():
-            self.fail("Invalid slug (must be lowercase)")
+            self.fail("Invalid slug (must be lowercase)", field="slug")
