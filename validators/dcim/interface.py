@@ -13,6 +13,7 @@ INTERFACES_REGEXP = re.compile(
             (
                 r"^fxp\d-re\d$",  # routing engine management
                 r"^[a-z]{2}-\d+/\d+/\d+(:\d+){0,1}(\.\d+){0,1}$",  # Juniper (eg et-0/0/0:0.0)
+                r"^vcp-\d+/\d+/\d+$",  # Juniper legacy (eg vcp-0/0/0)
                 r"^[a-z]{1,4}(\d+){0,1}(\.\d+){0,1}$",  # typical device names (eg. eth0, vlan.900, etc)
                 r"^\d+$",  # Netgear switch (just numbers)
                 r"^Ethernet\d+$",  # SONiC (eg. Ethernet1)
@@ -47,9 +48,10 @@ class Main(CustomValidator):
                 instance.device.tenant and instance.device.tenant.slug == "fr-tech"
             )  # Ignore frack devices
             and instance.enabled  # Ignore disabled interfaces
-            and not str(instance.name).startswith("vcp-")
-        ):  # Ignore VC links
-            self.fail("Invalid MTU (must be 9192)", field="mtu")
+            and not instance.mgmt_only  # Ignore mgmt interfaces
+            and not str(instance.name).startswith("vcp-")  # Ignore VC links
+        ):
+            self.fail(f"Invalid MTU {instance.mtu}, must be 9192", field="mtu")
 
         # Attributes
         attributes = [

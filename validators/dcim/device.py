@@ -50,14 +50,12 @@ class Main(CustomValidator):
             # For usual special cases their name contains the site (cr1-eqiad, ex4300-spare3-codfw, atlas-codfw, etc)
             return
 
-        host_id = re.search(r"\d{4}", instance.name)
-        if host_id and DATACENTER_NUMBERING_PREFIX[instance.site.slug] != str(
-            host_id.group()[0]
-        ):
-            self.fail(
-                f"Invalid name (first digit of {host_id.group()} must match device's site {instance.site.slug} digit)",
-                field="name"
-            )
+        # Check the site digit for hosts in the form host1001, skipping the ones with asset tags like wmf1234
+        if instance.device_role.slug == "server" and not instance.name.startswith("wmf"):
+            host_id = re.search(r"\d{4}", instance.name)
+            if host_id and DATACENTER_NUMBERING_PREFIX[instance.site.slug] != str(host_id.group()[0]):
+                self.fail(f"Invalid name (first digit of {host_id.group()} must match device's site "
+                          f"{instance.site.slug} digit)", field="name")
         # We could improve it once we got rid of all the hosts not matching this convention, like "flerovium".
 
     def validate(self, instance):
@@ -70,7 +68,8 @@ class Main(CustomValidator):
             if instance.asset_tag is None:
                 self.fail("Missing asset tag", field="asset_tag")
             if not ASSET_TAG_RE.fullmatch(instance.asset_tag):
-                self.fail("Invalid asset tag (must be (capitals) WMF then 4 or 5 digits)", field="asset_tag")
+                self.fail(f"Invalid asset tag {instance.asset_tag} (must be (capitals) WMF then 4 or 5 digits)",
+                          field="asset_tag")
 
         # purchase_date
         purchase_date = instance.cf["purchase_date"]

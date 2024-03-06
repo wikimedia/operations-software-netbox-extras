@@ -18,14 +18,11 @@ class Main(CustomValidator):
         """Mandatory entry point"""
         # label
         if instance.label:
-            try:
-                cable_same_serial = Cable.objects.get(label=instance.label)
-            except Cable.DoesNotExist:
-                return
-            if instance.id and cable_same_serial.id == instance.id:
-                return
-            if self._get_site_slug(cable_same_serial) == self._get_site_slug(instance):
-                self.fail(f"Duplicate label with {cable_same_serial}", field="label")
+            for cable_same_serial in Cable.objects.filter(label=instance.label):
+                if instance.id and cable_same_serial.id == instance.id:
+                    continue
+                if self._get_site_slug(cable_same_serial) == self._get_site_slug(instance):
+                    self.fail(f"Duplicate label with {cable_same_serial}", field="label")
         # Allow blank cables in core sites
         if (
             (not instance.label or not instance.label.strip())
