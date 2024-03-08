@@ -597,7 +597,7 @@ class Importer:
             # If parent on Netbox int doesn't match what PuppetDB says then set it
             if getattr(nbiface, nb_parent_type, None) != parent:
                 setattr(nbiface, nb_parent_type, parent)
-                self.log_info(f"Attach interface {nbiface.name} to {parent_type} {parent.name}")
+                self.log_info(f"Attach interface {nbiface.name} to {parent_type} {parent}")
 
         # If it's a special type of int set type (physical only)
         if "kind" in int_puppet_facts and not is_vm:
@@ -856,6 +856,7 @@ class Importer:
         if tagged_vlans:
             z_nbiface.mode = 'tagged'
             z_nbiface.tagged_vlans.set(tagged_vlans)
+            self.log_success(f"{z_nbiface.device}:{z_nbiface} configured tagged vlans {tagged_vlans}")
         else:
             z_nbiface.mode = 'access'
         z_nbiface.mtu = 9192
