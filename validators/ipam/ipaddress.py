@@ -3,7 +3,7 @@ import re
 from extras.validators import CustomValidator
 
 # TODO: query them or import them from wmflib
-DATACENTERS = ("eqiad", "codfw", "esams", "ulsfo", "eqsin", "drmrs")
+DATACENTERS = ("eqiad", "codfw", "esams", "ulsfo", "eqsin", "drmrs", "magru")
 
 
 class Main(CustomValidator):
