@@ -17,6 +17,7 @@ class GetHosts(Script):
     class Meta:
         name = "Capirca hosts definitions"
         description = "Returns all the Netbox hosts IPs, Anycast IPs and VIPs in a Capirca NETWORKS.net format."
+        job_timeout = 900
 
     def process_ipaddress(self, ipaddress):
         # Several types of IPs:
