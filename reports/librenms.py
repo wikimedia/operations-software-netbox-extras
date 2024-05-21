@@ -260,8 +260,9 @@ class LibreNMS(Report):
                 lnms_device_description = self.librenms.devices[device.serial][
                     "description"
                 ]
+                # The replace it to make server_technology match with "server technology" in NB.
                 lnms_device_harddesc = (
-                    lnms_device_hardware + " " + lnms_device_description
+                    lnms_device_hardware.replace('_', ' ') + " " + lnms_device_description
                 )
                 if nb_vendor_string in lnms_device_harddesc and (
                     nb_model_string in lnms_device_harddesc
