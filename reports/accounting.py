@@ -33,25 +33,27 @@ class Accounting(Report):
         """Generic init."""
         super().__init__(*args, **kwargs)
         self.assets = {}
+        self.multiple_serials = {}
+        self.accounting_client = None
 
     def pre_run(self):
         """Load the config file and initializes the Google Sheets API."""
         config = configparser.ConfigParser(interpolation=None)
         config.read(CONFIG_FILE)
 
+        self.accounting_client = self._init_accounting_client(config["service-credentials"])
+        self.multiple_serials = self.get_multiple_serials_from_accounting(
+            config["accounting"]["sheet_id"],
+            config["accounting"]["motherboard_swaps_range"],  # See https://phabricator.wikimedia.org/T358542
+        )
         self.assets = self.get_assets_from_accounting(
-            config["service-credentials"],
             config["accounting"]["sheet_id"],
             config["accounting"]["include_range"],
             config["accounting"]["exclude_range"],
         )
 
-    @staticmethod
-    def get_assets_from_accounting(creds, sheet_id, include_range, exclude_range):  # noqa: MC0001
-        # pylint: disable-msg=too-many-locals
-
-        # Disable the alerting as there is no point for now to work on simplifying the function
-        """Retrieve all assets from a specified Google Spreadsheet."""
+    def _init_accounting_client(self, creds):
+        """Initialize the client to access the Google Spreadsheet APIs."""
         # initialize the credentials API
         creds = service_account.Credentials.from_service_account_info(
             creds, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -65,35 +67,29 @@ class Accounting(Report):
 
         authorized_http = AuthorizedHttp(credentials=creds, http=http)
         service = googleapiclient.discovery.build("sheets", "v4", http=authorized_http)
-        sheet = service.spreadsheets()
+        return service.spreadsheets()
 
-        # and fetch the spreadsheet's contents
+    def _fetch_data_range(self, sheet_id, data_range):
+        """Fetch the given data range from the given Google Spreadsheet."""
         result = (
-            sheet.values()
+            self.accounting_client.values()
             .get(
                 spreadsheetId=sheet_id,
-                range=include_range,
+                range=data_range,
                 valueRenderOption="FORMULA",  # do not calculate formula values
                 dateTimeRenderOption="FORMATTED_STRING",
             )
             .execute()
         )
-        values = result.get("values", [])
+        return result.get("values", [])
+
+    def get_assets_from_accounting(self, sheet_id, include_range, exclude_range):
+        """Retrieve the assets from the accounting Google Spreadsheet and store them in the instance."""
+        values = self._fetch_data_range(sheet_id, include_range)
         if not values:
             return values
 
-        # fetch the recycled ones now
-        recycled_result = (
-            sheet.values()
-            .get(
-                spreadsheetId=sheet_id,
-                range=exclude_range,
-                valueRenderOption="FORMULA",  # do not calculate formula values
-                dateTimeRenderOption="FORMATTED_STRING",
-            )
-            .execute()
-        )
-        recycled_values = recycled_result.get("values", [])
+        recycled_values = self._fetch_data_range(sheet_id, exclude_range)
         recycled_serials = [str(row[0]).upper() for row in recycled_values[1:] if row[0]]
 
         # ignore the first row, as it is the document header; the second row is
@@ -120,10 +116,14 @@ class Accounting(Report):
 
             # use the column names for a dict's keys and the row as values
             asset = dict(zip(column_names, row))
-
-            asset["date"] = datetime.strptime(asset["date"], "%m/%d/%Y").date()
-            serial = asset["serial"]
             asset_tag = asset["asset_tag"]
+            asset["date"] = datetime.strptime(asset["date"], "%m/%d/%Y").date()
+
+            # if the motherboard was swapped, use the new serial
+            if asset_tag in self.multiple_serials:
+                asset["serial"] = self.multiple_serials[asset_tag].get("new_serial", "")
+
+            serial = asset["serial"]
 
             # skip items without a serial number; we use that as key to compare
             if serial.upper() in ("N/A", ""):
@@ -151,6 +151,38 @@ class Accounting(Report):
             assets[serial] = asset
 
         return assets
+
+    def get_multiple_serials_from_accounting(self, sheet_id, data_range):
+        """Retieve both serial numbers for hosts with swapped motherboards out of warranty.
+
+        In those cases the chassis and the motherboard have two different serial number, listed in the sheet.
+        Use this data to not alert on those if the serial matches either one.
+        """
+        # ignore the first row, as it is the document header; the second row is
+        values = self._fetch_data_range(sheet_id, data_range)[1:]
+        # the second row is the header row, with column names, which we map here to our own names
+        column_aliases = {
+            "Asset Tag#": "asset_tag",  # asset tag of the asset ("WMFKKKK")
+            "Old SN": "old_serial",  # Old serial number
+            "New SN": "new_serial",  # New serial number
+            "Additional Notes": "notes",
+            "Task": "ticket",  # procurement ticket ("RT #NNNN" or "TMMMMM")
+        }
+        column_names = [column_aliases.get(name, name.lower()) for name in values[0]]
+
+        # do some light parsing of the data, and store this in a dict keyed
+        # by serial number, as this is the key we use for matching
+        multiple_serials = {}
+        for row in values[1:]:
+            # skip rows with merged columns, like page header, date sections etc.
+            if len(row) < len(column_names):
+                continue
+
+            # use the column names for a dict's keys and the row as values
+            value = dict(zip(column_names, row))
+            multiple_serials[value["asset_tag"]] = value
+
+        return multiple_serials
 
     def test_field_match(self):
         """Tests whether various fields match between Accounting and Netbox."""
