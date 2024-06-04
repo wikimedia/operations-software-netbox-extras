@@ -120,9 +120,8 @@ class Network(Report):
                 self.log_warning(
                     interface,
                     (
-                        "Interface enabled but not connected on {} (description: {})".format(
-                            interface.device, interface.description
-                        )
+                        "Interface enabled but not connected on"
+                        f" {interface.device} (description: {interface.description})"
                     ),
                 )
                 continue
@@ -143,21 +142,20 @@ class Network(Report):
             if not device.primary_ip6:
                 self.log_failure(device, "Missing primary IPv6")
                 continue
+            if device.name in NO_V6_DEVICE_NAMES or any(
+                re.match(rf"{name}[1-9]", device.name)
+                for name in NO_V6_DEVICE_NAME_PREFIXES
+            ):
+                if device.primary_ip6.dns_name:
+                    self.log_warning(
+                        device,
+                        "Primary IPv6 has DNS name on a cluster that is listed as not supporting IPv6",
+                    )
+                    continue
             else:
-                if device.name in NO_V6_DEVICE_NAMES or any(
-                    re.match(rf"{name}[1-9]", device.name)
-                    for name in NO_V6_DEVICE_NAME_PREFIXES
-                ):
-                    if device.primary_ip6.dns_name:
-                        self.log_warning(
-                            device,
-                            "Primary IPv6 has DNS name on a cluster that is listed as not supporting IPv6",
-                        )
-                        continue
-                else:
-                    if not device.primary_ip6.dns_name:
-                        self.log_failure(device, "Primary IPv6 missing DNS name")
-                        continue
+                if not device.primary_ip6.dns_name:
+                    self.log_failure(device, "Primary IPv6 missing DNS name")
+                    continue
             success += 1
         self.log_success(None, f"{success} devices with operationnal primary IPv6")
 
@@ -209,9 +207,8 @@ class Network(Report):
             if device.primary_ip4.dns_name != device.primary_ip6.dns_name:
                 self.log_failure(
                     device,
-                    "Primary IPv4 and IPv6 DNS name mismatch ({} vs. {})".format(
-                        device.primary_ip4.dns_name, device.primary_ip6.dns_name
-                    ),
+                    ("Primary IPv4 and IPv6 DNS name mismatch"
+                     f" ({device.primary_ip4.dns_name} vs. {device.primary_ip6.dns_name})"),
                 )
                 continue
             success += 1
@@ -232,7 +229,7 @@ class Network(Report):
                 and ipaddress.assigned_object.device.tenant.slug == "fr-tech"
             ):
                 tenant = "frack."
-            expected_fqdn = "{}.mgmt.{}{}.wmnet".format(
+            expected_fqdn = "{}.mgmt.{}{}.wmnet".format( # noqa: consider-using-f-string
                 ipaddress.assigned_object.device.name,
                 tenant,
                 ipaddress.assigned_object.device.site.slug,
@@ -345,7 +342,7 @@ class Network(Report):
                     port_blocks[block] = interface.type
                 elif port_blocks[block] != interface.type:
                     block_members = (
-                        ", ".join(str(x) for x in range(block, 3)) + f" and {block+4}"
+                        ", ".join(str(x) for x in range(block, 3)) + f" and {block + 4}"
                     )
                     self.log_failure(
                         interface,

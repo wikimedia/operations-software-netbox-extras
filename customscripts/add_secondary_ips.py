@@ -1,17 +1,17 @@
+from string import ascii_lowercase
+
 from _common import Importer, format_logs
 
 from dcim.models import Device
 from ipam.models import IPAddress, Prefix
 from extras.scripts import ChoiceVar, ObjectVar, Script
 
-from string import ascii_lowercase
-
 
 class AddSecondaryIPs(Script, Importer):
     class Meta:
         name = "Assign additional IPv4 addresses to host"
         description = "Assign's additional IPv4 addresses to a host's primary int (principally for Cassandra instances)"
-        commit_default = True
+        commit_default = True  # noqa: unused-variable
 
     device = ObjectVar(
         description=("Server. (Required)"),
@@ -22,14 +22,14 @@ class AddSecondaryIPs(Script, Importer):
         }
     )
 
-    additional_ips = ChoiceVar(
+    additional_ips = ChoiceVar(  # noqa: unused-variable
         choices=[(i, i) for i in range(1, 6)],
         label="How many additional IPs to assign",
         description=("This many additional IPv4s will be allocated and their DNS name "
                      "will be set to $HOSTNAME-a, $HOSTNAME-b, etc.")
     )
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         device = data['device']

@@ -1,8 +1,9 @@
 """Report parity errors between LibreNMS and Netbox."""
 import configparser
-import pymysql
 
 from functools import lru_cache
+
+import pymysql
 
 from django.db.models import Q
 
@@ -68,7 +69,7 @@ MODEL_EQUIVS_DEVICES = {
 
 
 class LibreNMSData:
-    """This is a wrapper for the LibreNMS database which does some preprocessing of the return values."""
+    """Wrapper for the LibreNMS database which does some preprocessing of the return values."""
 
     def __init__(self, host, port, user, password, database):
         """Populate internal state from the LibreNMS database given MySQL connection parameters."""
@@ -137,7 +138,7 @@ class LibreNMS(Report):
         super().__init__(*args, **kwargs)
 
     @property
-    @lru_cache(maxsize=None)
+    @lru_cache(maxsize=None)  # noqa: method-cache-max-size-none
     def librenms(self):
         """Load the data from the endpoint as needed by the reports."""
         configfile = configparser.ConfigParser()
@@ -152,9 +153,9 @@ class LibreNMS(Report):
         )
 
     def test_nb_net_in_librenms(self):
-        """Check that every Device in the asw, pfw, msw, and cr classes in Netbox are `devices` in LibreNMS,
-        matched by serial number.
+        """Check that every Device in the asw, pfw, msw, and cr classes in Netbox are `devices` in LibreNMS.
 
+        Matched by serial number.
         pfw is treated specially because the non-master nodes do not exist as a separate device in LibreNMS `devices`
            table, and is thus is excluded.
 
@@ -162,7 +163,6 @@ class LibreNMS(Report):
 
         msw from Netgear do not appear in LibreNMS and are excluded.
         """
-
         success = 0
         no_ip = 0
         for dev in (
@@ -193,8 +193,11 @@ class LibreNMS(Report):
         self.log_success(None, f"{success} Netbox devices in LibreNMS")
 
     def test_nb_inventory_in_librenms(self):
-        """Check that every InventoryItem attached to a Device in Netbox, is in `entPhysical` table in librenms, matched
-        by serial number."""
+        """Check that every InventoryItem attached to a Device in Netbox, is in `entPhysical` table in librenms
+
+        Matched by serial number.
+
+        """
         success = 0
         parents = self._device_query.values_list("pk", flat=True).filter(
             device_role__slug__in=INCLUDE_DEVICE_ROLES
@@ -228,9 +231,8 @@ class LibreNMS(Report):
             if serial not in devserials:
                 self.log_failure(
                     None,
-                    "missing LibreNMS device from Netbox: serial: {} hostname: {} id: {}".format(
-                        serial, device["hostname"], device["id"]
-                    ),
+                    ("missing LibreNMS device from Netbox:"
+                     f" serial: {serial} hostname: {device['hostname']} id: {device['id']}")
                 )
             else:
                 success += 1
@@ -246,6 +248,7 @@ class LibreNMS(Report):
         This 'in' for comparison because several of these fields have extra information, model number
         details and other things at the end of the string which are not relevant to this test (in an effort to be
         as general a check as possible without special exceptions).
+
         """
         success = 0
         for device in self._device_query.filter(
@@ -274,13 +277,11 @@ class LibreNMS(Report):
                     self.log_failure(
                         device,
                         (
-                            "mismatch between LibreNMS and Netbox device types: Netbox: {} (vendor model), "
-                            "LibreNMS: {} (description) || {} (hardware)"
-                        ).format(
-                            nb_vendor_model_string,
-                            self.librenms.devices[device.serial]["description"],
-                            self.librenms.devices[device.serial]["hardware"],
-                        ),
+                            "mismatch between LibreNMS and Netbox device types:"
+                            f" Netbox: {nb_vendor_model_string} (vendor model), "
+                            f"LibreNMS: {self.librenms.devices[device.serial]['description']} (description) ||"
+                            f" {self.librenms.devices[device.serial]['hardware']} (hardware)"
+                        )
                     )
             elif device.serial in self.librenms.inventory:
                 librenms_vendor_model_string = (
@@ -302,9 +303,9 @@ class LibreNMS(Report):
                     self.log_failure(
                         device,
                         (
-                            "mismatch between LibreNMS and Netbox inventory; Netbox: {} (vendor model), "
-                            "LibreNMS: {} (vendor model)"
-                        ).format(nb_vendor_model_string, librenms_vendor_model_string),
+                            "mismatch between LibreNMS and Netbox inventory; Netbox: {nb_vendor_model_string}"
+                            f" (vendor model), LibreNMS: {librenms_vendor_model_string} (vendor model)"
+                        )
                     )
 
         self.log_success(

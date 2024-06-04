@@ -24,6 +24,7 @@ def get_module(module):
 
     Returns:
         A string representing the module
+
     """
     if module != "__main__":
         return module
@@ -39,7 +40,7 @@ class GetDeviceStats(Script):
         name = "Get Device Statistics"
         description = "Dump a set of statistics about various devices for Prometheus."
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         """The run method"""
         # Delete old versions of this report
         obj_type = ContentType.objects.get_for_model(models.Script)
@@ -66,7 +67,8 @@ class GetDeviceStats(Script):
         output.write("""# TYPE netbox_device_count gauge\n""")
         for params, count in counts.items():
             output.write(
-                'netbox_device_count{{status="{}",datacenter="{}",rackgroup="{}",manufacturer="{}"}} {}\n'.format(
+                ('netbox_device_count{{status="{}",datacenter="{}"'  # noqa: consider-using-f-string
+                 ',rackgroup="{}",manufacturer="{}"}} {}\n').format(
                     *params, count
                 )
             )

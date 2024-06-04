@@ -48,13 +48,14 @@ class Main(CustomValidator):
         return None  # to make pylint happy, but this stops above
 
     def _core_site_server(self, cable):
-        """check if the cable is a core site server cable.
+        """Check if the cable is a core site server cable.
 
-         Arguments:
+        Arguments:
             cable: Netbox cable
         Returns:
             true: the cable is a core site server cable.
             false: it's not.
+
         """
         if (
             cable.termination_a_type == interface_ct

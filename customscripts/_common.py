@@ -26,9 +26,6 @@ CONFIGFILE = "/etc/netbox/reports.cfg"
 
 PRIMARY_IFACE_NAME = "##PRIMARY##"
 
-# PTRs that we skip when adding names to IPs
-IP_PTR_BLOCKLIST_RE = tuple()
-
 # Statuses that devices must be to import
 IMPORT_STATUS_ALLOWLIST = ("active",
                            "failed",
@@ -58,7 +55,7 @@ interface_ct = ContentType.objects.get_for_model(Interface)
 def format_logs(logs):
     """Return all log messages properly formatted."""
     return "\n".join(
-        "[{level}] {msg}".format(level=level, msg=message) for level, message in logs
+        f"[{level}] {message}" for level, message in logs
     )
 
 
@@ -89,11 +86,11 @@ def port_to_iface(port: int, nbdevice: Device, interface_type: str) -> Optional[
             return f"{prefix}{str(nbdevice.vc_position)}/0/{str(port)}"
         return f"{prefix}0/0/{str(port)}"
 
-    elif nbdevice.device_type.manufacturer.slug == 'dell':
-        return f"Ethernet{str(port-1)}"
-    else:
-        # TODO once upgraded: raise AbortScript("Unsupported switch vendor (must be Dell or Juniper)")
-        return None
+    if nbdevice.device_type.manufacturer.slug == 'dell':
+        return f"Ethernet{str(port - 1)}"
+
+    # TODO once upgraded: raise AbortScript("Unsupported switch vendor (must be Dell or Juniper)")
+    return None
 
 
 def duplicate_cable_id(cable_id: int, site: Site) -> bool:
@@ -107,7 +104,6 @@ def duplicate_cable_id(cable_id: int, site: Site) -> bool:
         bool: The cable ID is already used or not.
 
     """
-
     cables_with_same_id = Cable.objects.filter(label=cable_id)
     for cable in cables_with_same_id:
         if cable.termination_a_type == interface_ct and cable.termination_a.device.site == site:
@@ -136,7 +132,7 @@ def find_tor(server: Device) -> Optional[Device]:
 
 
 class Importer:
-    """This is shared functionality for interface and IP address importers."""
+    """Shared functionality for interface and IP address importers."""
 
     @staticmethod
     def _get_ipv6_prefix_length(ipv6mask):
@@ -187,8 +183,7 @@ class Importer:
         return length
 
     def _assign_ip_to_interface(self, address, nbiface, networking, iface, is_primary, is_ipv6):
-        """Perform the minor complexity of assigning an IP address to an interface as specified by
-           a PuppetDB interface fact."""
+        """Assign an IP address to an interface as specified by a PuppetDB interface fact."""
         ipaddr_changed = False
         newdev_changed = False
         # heuristically determine if this is probably anycast
@@ -333,7 +328,7 @@ class Importer:
             if not prefixq:
                 self.log_failure(f"Can't find matching prefix for {address} when fixing netmask!")
                 return None
-            realnetmask = max([i.prefix.prefixlen for i in prefixq])
+            realnetmask = max(i.prefix.prefixlen for i in prefixq)
             address = ipaddress.ip_interface(f"{addr}/{realnetmask}")
             self.log_info("VIP exempt: Overriding provided netmask")
 
@@ -448,14 +443,14 @@ class Importer:
                 self.log_success(f"{z_nbdevice}: deleted orphan interface {z_nbdevice_int_name}")
 
     def _get_iface_fmt(self, iface_name):
-        """Returns iface_fmt object for correct PHY type based on Juniper interface naming conventions"""
+        """Returns iface_fmt object for correct PHY type based on Juniper interface naming conventions."""
         return {
             'xe-': InterfaceTypeChoices.TYPE_10GE_SFP_PLUS,
             'et-': InterfaceTypeChoices.TYPE_25GE_SFP28,
         }.get(iface_name[0:3], InterfaceTypeChoices.TYPE_1GE_FIXED)
 
     def _update_z_vlan(self, device_interface):
-        """ Update switch-port vlans if they don't match those on host """
+        """Update switch-port vlans if they don't match those on host."""
         if not (device_interface.mode and device_interface.connected_endpoint):
             return
 
@@ -523,19 +518,21 @@ class Importer:
             self._create_cable(nbiface, z_nbiface, label=label)
 
     def _get_parent_interface(self, device, int_puppet_facts, parent_type):
-        """Returns the Netbox interface object referenced in another interface's
-           puppet facts as its 'parent_bridge' or 'parent_link'.
+        """Returns the Netbox interface object referenced in another interface's Puppet facts.
 
-            Inputs:
-                device:      netbox device object the interface belongs to
-                int_puppet_facts:  puppetdb networking facts for the specific interface
-                parent_type: either 'parent_link' if we want to fetch the physical network
-                             interface of a vlan sub-int, or 'parent_bridge' if we are
-                             trying to fetch a bridge device.
+        As its 'parent_bridge' or 'parent_link'.
 
-            Returns:
-                Netbox interface object of parent.  None if the puppet facts don't list
-                any parent of requested type, or they do but no NB int of that name exists.
+        Inputs:
+            device:      netbox device object the interface belongs to
+            int_puppet_facts:  puppetdb networking facts for the specific interface
+            parent_type: either 'parent_link' if we want to fetch the physical network
+                        interface of a vlan sub-int, or 'parent_bridge' if we are
+                        trying to fetch a bridge device.
+
+        Returns:
+            Netbox interface object of parent.  None if the puppet facts don't list
+            any parent of requested type, or they do but no NB int of that name exists.
+
         """
         try:
             return Interface.objects.get(name=int_puppet_facts[parent_type], device=device)
@@ -572,18 +569,17 @@ class Importer:
         return nbiface
 
     def _update_int_relations(self, device, nbiface, int_puppet_facts, is_vm):
-        """ Sets or updates interface link parents, bridge membership and vlan settings
-            as required
+        """Sets or updates interface link parents, bridge membership and vlan settings as required.
 
-            Inputs:
-                device: Netbox device object
-                nbiface: Netbox interface object
-                int_puppet_facts: puppetdb networking facts for the specific interface
-                is_vm: if the current device is a Virtual Machine
+        Inputs:
+            device: Netbox device object
+            nbiface: Netbox interface object
+            int_puppet_facts: puppetdb networking facts for the specific interface
+            is_vm: if the current device is a Virtual Machine
 
-            Returns: None
+        Returns: None
+
         """
-
         # Create attachment to related interfaces
         for parent_type in ['parent_bridge', 'parent_link']:
             parent = self._get_parent_interface(device, int_puppet_facts, parent_type)
@@ -612,15 +608,16 @@ class Importer:
         nbiface.save()
 
     def _set_subint_vlan(self, nbiface, int_puppet_facts):
-        """ Sets 802.1q sub-int and parent int mode, adds vlan to list for both.
+        """Sets 802.1q sub-int and parent int mode, adds vlan to list for both.
 
-            Sub-interfaces are set to type 'access', with the access vlan set.
-            Parents are set to type 'trunk' (if not already), and vlan from sub-int is
-            added to its 'tagged_vlans'.
+        Sub-interfaces are set to type 'access', with the access vlan set.
+        Parents are set to type 'trunk' (if not already), and vlan from sub-int is
+        added to its 'tagged_vlans'.
 
-            Inputs:
-                nbiface:    netbox interface object
-                int_puppet_facts: puppetdb networking facts for the specific interface
+        Inputs:
+            nbiface:    netbox interface object
+            int_puppet_facts: puppetdb networking facts for the specific interface
+
         """
         try:
             subint_vlan = VLAN.objects.get(vid=int_puppet_facts['dot1q'], site=nbiface.device.site.id)
@@ -640,13 +637,13 @@ class Importer:
         self.log_info(f"Set vlan {int_puppet_facts['dot1q']} as untagged vlan on {nbiface.name}")
 
     def _make_interface_tagged(self, nbiface):
-        """ Sets netbox interface mode to 'tagged'.
+        """Sets netbox interface mode to 'tagged'.
 
-            Where the interface has an IP address directly connected we find the vlan associated
-            with that IP and set it as the untagged vlan for the interface.
+        Where the interface has an IP address directly connected we find the vlan associated
+        with that IP and set it as the untagged vlan for the interface.
 
-            Inputs:
-                nbiface: netbox interface object
+        Inputs:
+            nbiface: netbox interface object
         """
         nbiface.mode = 'tagged'
         # Set untagged_vlan based on interface IP if present
@@ -663,15 +660,18 @@ class Importer:
         nbiface.save()
 
     def _get_ordered_ints(self, interfaces):
-        """ Interates over interface names from Puppet data, and returns list of them
-            in order that is required for Netbox addition.  Specifically bridges need to
-            be added first, then vlan sub-int parents, then the rest.
+        """Returns ordered list of interface names from Puppet data
 
-            Inputs:
-                interfaces: puppetdb networking facts for all the device interfaces
+        Interates over interface names from Puppet data, and returns list of them
+        in order that is required for Netbox addition. Specifically bridges need to
+        be added first, then vlan sub-int parents, then the rest.
 
-            Returns:
-                int_names:  list of interface names in the order they need to be processed
+        Inputs:
+            interfaces: puppetdb networking facts for all the device interfaces
+
+        Returns:
+            int_names:  list of interface names in the order they need to be processed
+
         """
         # Iterate over ints, add bridges to int_names, and record vlan_parents
         int_names = []
@@ -687,8 +687,9 @@ class Importer:
         return int_names
 
     def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_vm=False):
-        """Resolve one device's interfaces and ip addresses based on a net_driver, networking and lldp dictionary
-           as would be obtained from PuppetDB under those key names."""
+        # TODO: docstring
+        # Resolve one device's interfaces and ip addresses based on a net_driver, networking and lldp dictionary
+        # as would be obtained from PuppetDB under those key names.
         output = []
 
         for device_interface in device.interfaces.all():
@@ -738,7 +739,7 @@ class Importer:
                 self._update_int_relations(device, nbiface, int_puppet_facts, is_vm)
 
             # FIXME /32 bug things here
-            vipexempt = any([r.match(device.name) for r in NO_VIP_RE])
+            vipexempt = any(r.match(device.name) for r in NO_VIP_RE)
             # process ipv4 addresses
             for binding in int_puppet_facts.get('bindings', []):
                 address = self._process_binding_address(binding, False, is_anycast, (vipexempt and not is_vdev))
@@ -892,8 +893,9 @@ class Importer:
         # TODO in theory can have circuit termination and other types of object terminations
         cable = interface.cable
         if not cable:
-            return
+            return None
         if cable.termination_a != interface:
             return cable.termination_a
-        elif cable.termination_b != interface:
+        if cable.termination_b != interface:
             return cable.termination_b
+        return None

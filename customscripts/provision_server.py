@@ -48,7 +48,7 @@ class ProvisionServerNetworkCSV(Script):
         description="Template and example on https://phabricator.wikimedia.org/F32411089"
     )
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         reader = csv.DictReader(io.StringIO(data['csv_file'].read().decode('utf-8')))
 
         for row in reader:
@@ -66,34 +66,33 @@ class ProvisionServerNetworkCSV(Script):
         return format_logs(self.log)
 
     def _transform_csv(self, row):
-        "Transform the CSV fields to Netbox objects."
-
+        """Transform the CSV fields to Netbox objects."""
         for header in CSV_HEADERS:
             try:
                 row[header]
             except KeyError:
                 self.log_failure(f"CSV header {header} missing, skipping.")
-                return
+                return None
         # Ensure that no cells are missing, not empty cells, but missing cells
         if any(value is None for value in row.values()):
             self.log_failure(f"{row['device']}: missing CSV cells, skipping.")
-            return
+            return None
         try:
             row['device'] = Device.objects.get(name=row['device'])
         except ObjectDoesNotExist:
             self.log_failure(f"{row['device']}: device not found, skipping.")
-            return
+            return None
         try:
             row['z_nbdevice'] = Device.objects.get(name=row['z_nbdevice'])
         except ObjectDoesNotExist:
             self.log_failure(f"{row['device']}: switch {row['z_nbdevice']} not found, skipping.")
-            return
+            return None
         if row['vlan']:
             try:
                 row['vlan'] = VLAN.objects.get(name=row['vlan'], site=row['device'].site)
             except ObjectDoesNotExist:
                 self.log_failure(f"{row['device']}: vlan {row['vlan']} not found, skipping.")
-                return
+                return None
         row['skip_ipv6_dns'] = bool(int(row['skip_ipv6_dns']))
         row['z_port'] = int(row['z_port'])
         if row['cassandra_instances']:
@@ -183,13 +182,13 @@ class ProvisionServerNetwork(Script, Importer):
         }
     )
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         self.provision_server(data)
         return format_logs(self.log)
 
-    def provision_server(self, data):
+    def provision_server(self, data):  # noqa: too-many-return-statements
         """Process a single device."""
         device = data['device']
         z_nbdevice = data['z_nbdevice']
@@ -383,7 +382,7 @@ class ProvisionServerNetwork(Script, Importer):
         # Generate the IPv6 address embedding the IPv4 address, for example from an IPv4 address 10.0.0.1 and an
         # IPv6 prefix 2001:db8:3c4d:15::/64 the mapped IPv6 address 2001:db8:3c4d:15:10:0:0:1/64 is generated.
         prefix_v6_base, prefix_v6_mask = str(prefix_v6).split("/")
-        mapped_v4 = str(ip_v4).split('/')[0].replace(".", ":")
+        mapped_v4 = str(ip_v4).split('/', maxsplit=1)[0].replace(".", ":")
         ipv6_address = f"{prefix_v6_base.rstrip(':')}:{mapped_v4}/{prefix_v6_mask}"
         ip_v6 = self._add_ip(ipv6_address, dns_name_v6, prefix_v6, iface, device)
         device.primary_ip6 = ip_v6
@@ -405,8 +404,9 @@ class ProvisionServerNetwork(Script, Importer):
                 old_vlan_name = f"{vlan_type}1-{device.rack.location.slug.split('-')[-1]}-{device.site.slug}"
         else:
             if vlan_type not in VLAN_POP_TYPES:
-                self.log_failure(f"{device}: VLAN type {vlan_type} not available in site {device.site.slug}, skipping.")
-                return
+                self.log_failure(f"{device}: VLAN type {vlan_type}"
+                                 f" not available in site {device.site.slug}, skipping.")
+                return None
 
             old_vlan_name = f"{vlan_type}1-{device.site.slug}"
 
@@ -418,6 +418,7 @@ class ProvisionServerNetwork(Script, Importer):
             except ObjectDoesNotExist:
                 self.log_failure(
                     f"{device}: unable to find VLAN with name {old_vlan_name} or {new_vlan_name}, skipping.")
+        return None
 
     def _is_vlan_valid(self, vlan, device):
         """Try to ensure that the VLAN matches the device location."""
@@ -430,7 +431,7 @@ class ProvisionServerNetwork(Script, Importer):
 
         if vlan.tenant != device.tenant:
             self.log_failure(
-                f"{device}: , mismatch tenant for VLAN {vlan.name}: "
+                f"{device}: mismatch tenant for VLAN {vlan.name}: "
                 f"{device.tenant} (device) != {vlan.tenant} (VLAN), skipping."
             )
             return False

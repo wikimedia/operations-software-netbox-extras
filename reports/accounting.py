@@ -246,7 +246,8 @@ class Accounting(Report):
         for device in recent_devices:
             if device.serial not in self.assets:
                 self.log_failure(
-                    device, f"Device with s/n {device.serial} ({device.asset_tag}) not present in Accounting"
+                    device, (f"Device with s/n {device.serial} ({device.asset_tag})"
+                             " not present in Accounting")
                 )
             else:
                 device_matches += 1

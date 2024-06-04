@@ -45,9 +45,9 @@ class PuppetDBDataMixin:
         """Return a dictionary keyed by hostname of a specified PuppetDB fact."""
         config = self._get_config()
         url = "/".join([config["puppetdb"]["url"], "/v1/facts", factname])
-        response = requests.get(url, verify=config["puppetdb"]["ca_cert"])
+        response = requests.get(url, verify=config["puppetdb"]["ca_cert"], timeout=60)
         if response.status_code != 200:
-            raise Exception(f"Cannot connect to PuppetDB {url} - {response.status_code} {response.text}")
+            raise RuntimeError(f"Cannot connect to PuppetDB {url} - {response.status_code} {response.text}")
         return response.json()
 
 
@@ -110,9 +110,8 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
                 invalid_device = Device.objects.get(name=device)
                 self.log_failure(
                     invalid_device,
-                    ("Device is in PuppetDB but is {} in Netbox (should be Active or Failed)").format(
-                        invalid_device.get_status_display()
-                    ),
+                    (f"Device is in PuppetDB but is {invalid_device.get_status_display()}"
+                     " in Netbox (should be Active or Failed)")
                 )
             else:
                 self.log_failure(None, f"expected device missing from Netbox: {device}")
@@ -129,9 +128,8 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             if device.name not in puppetdb_devices:
                 self.log_failure(
                     device,
-                    ("Device is {} in Netbox but is missing from PuppetDB (should be {})").format(
-                        device.get_status_display(), EXCLUDE_AND_FAILED_STATUSES
-                    ),
+                    (f"Device is {device.get_status_display()} in Netbox"
+                     f" but is missing from PuppetDB (should be {EXCLUDE_AND_FAILED_STATUSES})")
                 )
             elif puppetdb_devices[device.name]:  # True if device is is_virtual
                 self.log_failure(device, "expected physical device marked as virtual in PuppetDB")
@@ -152,9 +150,7 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             if device.serial != puppetdb_serials[device.name]:
                 self.log_failure(
                     device,
-                    "mismatched serials: {} (netbox) != {} (puppetdb)".format(
-                        device.serial, puppetdb_serials[device.name]
-                    ),
+                    f"mismatched serials: {device.serial} (netbox) != {puppetdb_serials[device.name]} (puppetdb)"
                 )
             else:
                 success += 1
@@ -175,9 +171,8 @@ class PhysicalHosts(Report, PuppetDBDataMixin):
             if device.device_type.model.split(" - ")[0] != puppetdb_models[device.name]:
                 self.log_failure(
                     device,
-                    "mismatched device models: {} (netbox) != {} (puppetdb)".format(
-                        device.device_type.model, puppetdb_models[device.name]
-                    ),
+                    (f"mismatched device models: {device.device_type.model}"
+                     f" (netbox) != {puppetdb_models[device.name]} (puppetdb)")
                 )
             else:
                 success += 1

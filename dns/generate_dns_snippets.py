@@ -246,7 +246,7 @@ class RecordBase:
         self.zone = zone
         self.hostname = hostname
         self.interface = ipaddress.ip_interface(ip_interface)
-        self.ip = self.interface.ip
+        self.ip = self.interface.ip  # noqa: invalid-name
         self.comment = ""
 
     def __hash__(self) -> int:
@@ -418,7 +418,7 @@ class Records:
         """Generate all DNS record based on Netbox data."""
         logger.info("Generating DNS records")
         records_count = 0
-        for name, device_data in self.netbox.devices.items():
+        for _, device_data in self.netbox.devices.items():
             for address in device_data["addresses"]:
                 hostname, zone, zone_name = self._split_dns_name(address)
                 records = Records._generate_address_records(
@@ -455,7 +455,7 @@ class Records:
         logger.info("Generating zonefile snippets to directory %s", destination)
         for record_type, zones in self.zones.items():
             for zone, zone_records in zones.items():
-                with open(os.path.join(destination, zone), "w") as zonefile:
+                with open(os.path.join(destination, zone), "w", encoding='ascii') as zonefile:
                     for record in sorted(zone_records):
                         zonefile.write(str(record) + "\n")
 
@@ -527,7 +527,7 @@ class Records:
             ]
             if matching_prefixes:
                 prefix_key = max(
-                    [prefix for prefix in matching_prefixes if self.netbox.prefixes[prefix].site],
+                    (prefix for prefix in matching_prefixes if self.netbox.prefixes[prefix].site),
                     key=attrgetter("prefixlen"),
                 )
                 if prefix_key:
@@ -565,8 +565,8 @@ def get_file_stats(tmpdir: str) -> Tuple[int, int]:
     path = Path(tmpdir)
     for zone in path.glob("[!.]*"):
         files += 1
-        with open(zone) as f:
-            lines += sum(1 for line in f)
+        with open(zone, encoding='ascii') as f:
+            lines += sum(1 for _ in f)
 
     logger.debug("Found %d existing files with %d lines", files, lines)
     return files, lines
@@ -611,7 +611,7 @@ def validate(files: int, lines: int, delta: Mapping[str, int]) -> None:
     logging.info("Commit details: %s", delta)
 
 
-def push(working_repo: git.Repo, sha1: str) -> int:
+def push_changes(working_repo: git.Repo, sha1: str) -> int:
     """Push the committed changes to the repository's remote.
 
     Arguments:
@@ -671,7 +671,7 @@ def run_commit(args: argparse.Namespace, config: ConfigParser, tmpdir: str) -> T
 
     answer = input(f'OK to push the changes to the {config.get("dns_snippets", "repo_path")} repository? (y/n) ')
     if answer == "y":
-        ret_code = push(working_repo, commit.hexsha)
+        ret_code = push_changes(working_repo, commit.hexsha)
     else:
         logger.error("Manually aborted.")
         ret_code = ABORT_RETURN_CODE
@@ -698,16 +698,16 @@ def save_icinga_state(ret_code: int, netbox: Netbox, state_file: str) -> None:
             message = "Netbox has uncommitted DNS changes"
             ret_code = 2
 
-    with open(state_file, "w") as f:
+    with open(state_file, "w", encoding='ascii') as f:
         json.dump({"exit_code": ret_code, "message": message, "timestamp": time.time()}, f)
 
 
 def check_icinga_should_run(state_file: str) -> bool:
     """Return True if the script should continue to update the state file, False if the state file is fresh enough."""
     try:
-        with open(state_file) as f:
+        with open(state_file, encoding='ascii') as f:
             state = json.load(f)
-    except Exception as e:
+    except Exception as e:  # noqa: broad-exception-caught
         logger.error("Failed to read Icinga state from %s: %s", state_file, e)
         return True
 
@@ -746,9 +746,9 @@ def main() -> int:
             batch_status, ret_code = run_commit(args, config, tmpdir)
         elif args.command == "push":
             tmpdir = str(args.path)
-            ret_code = push(git.Repo(tmpdir), args.sha1)
+            ret_code = push_changes(git.Repo(tmpdir), args.sha1)
 
-    except Exception:
+    except Exception:  # noqa: broad-exception-caught
         logger.exception("Failed to run")
         ret_code = EXCEPTION_RETURN_CODE
 

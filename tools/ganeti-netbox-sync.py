@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 # pylint: disable=invalid-name
+# TODO: rename file
 """Synchronize Ganeti data to Netbox."""
 import argparse
 import logging
@@ -187,7 +188,7 @@ class NetboxCluster(Netbox):
         try:
             device = self.api.dcim.devices.get(name=device_name)
         except pynetbox.RequestError as e:
-            logger.error("Unable to load device %s on Netbox: %s", device, e)
+            logger.error("Unable to load device %s on Netbox: %s", device_name, e)
             return False
 
         cluster_id = None if unset else self.cluster.id
@@ -280,7 +281,7 @@ class GanetiNetboxSyncer:
 
     def add_clusters(self) -> None:
         """Add Ganeti groups as Netbox clusters as member of the current cluster group."""
-        for group, nodes in self.ganeti_groups.items():
+        for group, _ in self.ganeti_groups.items():
             if group in self.netbox_clusters:
                 continue
 
@@ -322,7 +323,7 @@ class GanetiNetboxSyncer:
                 else:
                     self.actions["Nodes failed"] += 1
 
-            for name, device in netbox_devices.items():
+            for name, _ in netbox_devices.items():
                 if name in ganeti_nodes:
                     continue
 

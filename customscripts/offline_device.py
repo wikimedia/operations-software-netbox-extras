@@ -9,18 +9,18 @@ class OfflineDevice(Script):
             "Set the device status to Offline (unracked), unset its position and delete all interfaces "
             "and related IP addresses."
         )
-        commit_default = False
+        commit_default = False  # noqa: unused-variable
 
     devices = StringVar(
         label="Device name(s)",
         description="Device to be offlined, space separated if more than one",
     )
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         """Offline the device."""
         try:
             self._run(data)
-        except Exception as e:
+        except Exception as e:  # noqa: broad-exception-caught TODO: fix after upgrade
             self.log_failure(f"Failed to offline device(s) {data['device_name']}: {e}")
 
         return self._format_logs()
@@ -48,7 +48,7 @@ class OfflineDevice(Script):
         device.status = "offline"
         device.rack = None
         device.position = None
-        device.face = ""
+        device.face = ""  # noqa: unused-variable
         device.primary_ip4 = None
         device.primary_ip6 = None
         device.save()  # Avoid any race condition with DNS generations scripts

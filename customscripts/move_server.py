@@ -10,7 +10,7 @@ class MoveServer(Script, Importer):
     class Meta:
         name = "Move a server within the same row"
         description = "More exactly: keep the same vlan and IP."
-        commit_default = False
+        commit_default = False  # noqa: unused-variable
 
     device = ObjectVar(
         required=True,
@@ -40,13 +40,13 @@ class MoveServer(Script, Importer):
     )
     cable_id = StringVar(label="Cable ID", required=False)
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         self.move_server(data)
         return format_logs(self.log)
 
-    def move_server(self, data):
+    def move_server(self, data):  # noqa: too-many-return-statements
         """Process a single device."""
         device = data['device']
         z_nbdevice = data['z_nbdevice']
@@ -131,7 +131,7 @@ class MoveServersUplinks(Script, Importer):
     class Meta:
         name = "Move all the servers' uplinks from old to new ToR."
         description = "Assigns port number based on the rack U number of the server."
-        commit_default = False
+        commit_default = False  # noqa: unused-variable
 
     new_switch = ObjectVar(
         required=True,
@@ -144,7 +144,7 @@ class MoveServersUplinks(Script, Importer):
         }
     )
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         self.move_uplinks(data)

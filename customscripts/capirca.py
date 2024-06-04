@@ -17,7 +17,12 @@ class GetHosts(Script):
     class Meta:
         name = "Capirca hosts definitions"
         description = "Returns all the Netbox hosts IPs, Anycast IPs and VIPs in a Capirca NETWORKS.net format."
-        job_timeout = 900
+        job_timeout = 900  # noqa: unused-variable
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.interface_ct = ContentType.objects.get_for_model(Interface)
+        self.vm_ct = ContentType.objects.get_for_model(VMInterface)
 
     def process_ipaddress(self, ipaddress):
         # Several types of IPs:
@@ -64,11 +69,9 @@ class GetHosts(Script):
 
         return output.getvalue()
 
-    def run(self, data, commit):
+    def run(self, data, commit):  # noqa: unused-argument
         hosts = defaultdict(set)
         groups = defaultdict(set)
-        self.interface_ct = ContentType.objects.get_for_model(Interface)
-        self.vm_ct = ContentType.objects.get_for_model(VMInterface)
 
         # Iterate over all the IPs, we're going to sort/filter them later on
         for ipaddress in IPAddress.objects.filter(status="active"):
