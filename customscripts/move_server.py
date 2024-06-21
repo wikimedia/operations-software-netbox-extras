@@ -93,7 +93,7 @@ class MoveServer(Script, Importer):
                                  "virtual-chassis postition.")
                 return
 
-        nbiface = self.find_main_interface(device)
+        nbiface = self.find_primary_interface(device)
         if not nbiface:
             return
         z_old_nbiface = self.find_remote_interface(nbiface)
