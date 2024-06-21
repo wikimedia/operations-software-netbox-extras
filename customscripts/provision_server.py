@@ -215,9 +215,9 @@ class ProvisionServerNetwork(Script, Importer):
             self.log_failure(f"{device}: missing rack information, skipping.")
             return
 
-        if device.device_role.slug != "server":
+        if device.role.slug != "server":
             self.log_failure(
-                f"{device.name}: role {device.device_role}, only servers are supported, skipping."
+                f"{device.name}: role {device.role}, only servers are supported, skipping."
             )
             return
 

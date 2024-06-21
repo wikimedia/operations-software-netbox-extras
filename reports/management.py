@@ -30,7 +30,7 @@ class ManagementConsole(Report):
                     DeviceStatusChoices.STATUS_DECOMMISSIONING,
                 )
             )
-            .filter(device_role__slug__in=DEVICE_ROLES)
+            .filter(role__slug__in=DEVICE_ROLES)
             .exclude(site__slug__in=EXCLUDED_SITES)
         ):
             ports = device.consoleports.all()

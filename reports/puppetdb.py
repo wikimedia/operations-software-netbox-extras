@@ -25,7 +25,7 @@ EXCLUDE_STATUSES = (
     DeviceStatusChoices.STATUS_STAGED,
 )
 EXCLUDE_AND_FAILED_STATUSES = EXCLUDE_STATUSES + (DeviceStatusChoices.STATUS_FAILED,)
-DEVICE_QUERY = Device.objects.filter(device_role__slug__in=INCLUDE_ROLES, tenant__isnull=True)
+DEVICE_QUERY = Device.objects.filter(role__slug__in=INCLUDE_ROLES, tenant__isnull=True)
 
 
 class PuppetDBDataMixin:

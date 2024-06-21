@@ -124,7 +124,7 @@ def find_tor(server: Device) -> Optional[Device]:
 
     """
     switch = Device.objects.filter(rack=server.rack,
-                                   device_role__slug__in=('asw', 'cloudsw'),
+                                   role__slug__in=('asw', 'cloudsw'),
                                    status='active')
     if len(switch) > 1:  # TODO raise AbortScript once Netbox is upgraded.
         return None
