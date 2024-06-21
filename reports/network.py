@@ -67,7 +67,7 @@ class Network(Report):
         """
         seen_interfaces = defaultdict(set)
         for interface in Interface.objects.filter(
-            device__device_role__slug__in=SWITCHES_ROLES,
+            device__role__slug__in=SWITCHES_ROLES,
             device__device_type__manufacturer__slug="juniper",
         ).exclude(device__status__in=EXCLUDE_STATUSES):
             # Only care about access interfaces
@@ -108,7 +108,7 @@ class Network(Report):
         Exception being management switches as we don't document them in core sites.
         """
         for interface in (
-            Interface.objects.filter(device__device_role__slug__in=NETWORK_ROLES)
+            Interface.objects.filter(device__role__slug__in=NETWORK_ROLES)
             .exclude(device__status__in=EXCLUDE_STATUSES)
             .exclude(cable__isnull=False)
             .exclude(type__in=VIRTUAL_IFACE_TYPES)
@@ -137,7 +137,7 @@ class Network(Report):
         success = 0
         # Exclude fr-tech as long as they're v4 only
         for device in Device.objects.filter(
-            device_role__slug="server", tenant__isnull=True
+            role__slug="server", tenant__isnull=True
         ).exclude(status__in=EXCLUDE_STATUSES):
             if not device.primary_ip6:
                 self.log_failure(device, "Missing primary IPv6")
@@ -189,7 +189,7 @@ class Network(Report):
         """
         success = 0
         for device in Device.objects.filter(
-            device_role__slug="server", tenant__isnull=True
+            role__slug="server", tenant__isnull=True
         ).exclude(status__in=EXCLUDE_STATUSES):
             if not device.primary_ip4 or not device.primary_ip4.dns_name:
                 self.log_failure(device, "Device with no primary IPv4 or DNS name")
@@ -251,7 +251,7 @@ class Network(Report):
         """
         success = 0
         for interface in (
-            Interface.objects.filter(device__device_role__slug="server")
+            Interface.objects.filter(device__role__slug="server")
             .exclude(cable__isnull=True)
             .annotate(Count("ip_addresses"))
             .filter(ip_addresses__count__gte=1)
@@ -260,7 +260,7 @@ class Network(Report):
                 "ip_addresses", "connected_endpoint__untagged_vlan__prefixes"
             )
         ):
-            if interface.connected_endpoint.device.device_role.slug not in (
+            if interface.connected_endpoint.device.role.slug not in (
                 "asw",
                 "cloudsw",
             ):

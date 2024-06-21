@@ -69,14 +69,14 @@ class MoveServer(Script, Importer):
             self.log_failure(f"{device}: Rack unit can't be 0, skipping.")
             return
 
-        if device.device_role.slug != "server":
+        if device.role.slug != "server":
             self.log_failure(
-                f"{device.name}: role {device.device_role}, only servers are supported, skipping."
+                f"{device.name}: role {device.role}, only servers are supported, skipping."
             )
             return
 
-        if z_nbdevice.device_role.slug not in ('asw', 'cloudsw'):
-            self.log_failure(f"{device}: switch {z_nbdevice} with role {z_nbdevice.device_role}, "
+        if z_nbdevice.role.slug not in ('asw', 'cloudsw'):
+            self.log_failure(f"{device}: switch {z_nbdevice} with role {z_nbdevice.role}, "
                              "only switches are supported, skipping.")
             return
 
@@ -155,7 +155,7 @@ class MoveServersUplinks(Script, Importer):
         new_switch = data['new_switch']
 
         # Get all servers from the same rack as the new switch
-        all_servers = Device.objects.filter(device_role__slug='server',
+        all_servers = Device.objects.filter(role__slug='server',
                                             status='active',
                                             tenant__isnull=True,
                                             rack=new_switch.rack)

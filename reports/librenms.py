@@ -166,7 +166,7 @@ class LibreNMS(Report):
         success = 0
         no_ip = 0
         for dev in (
-            self._device_query.filter(device_role__slug__in=INCLUDE_DEVICE_ROLES)
+            self._device_query.filter(role__slug__in=INCLUDE_DEVICE_ROLES)
             .exclude(MODEL_EXCLUDES)
             .exclude(serial__exact="")
             .exclude(DEVICE_EXCLUDES)
@@ -183,7 +183,7 @@ class LibreNMS(Report):
                 else:
                     self.log_failure(
                         dev,
-                        f"missing Netbox device from LibreNMS of role {dev.device_role.slug}",
+                        f"missing Netbox device from LibreNMS of role {dev.role.slug}",
                     )
 
         if no_ip:
@@ -200,7 +200,7 @@ class LibreNMS(Report):
         """
         success = 0
         parents = self._device_query.values_list("pk", flat=True).filter(
-            device_role__slug__in=INCLUDE_DEVICE_ROLES
+            role__slug__in=INCLUDE_DEVICE_ROLES
         )
         for inventory_item in (
             InventoryItem.objects.filter(device_id__in=parents)
@@ -225,7 +225,7 @@ class LibreNMS(Report):
         """Check that every `device` in LibreNMS exists as a Device in Netbox, matched by serial number."""
         success = 0
         devserials = self._device_query.filter(
-            device_role__slug__in=INCLUDE_DEVICE_ROLES_LNMS_CHECK
+            role__slug__in=INCLUDE_DEVICE_ROLES_LNMS_CHECK
         ).values_list("serial", flat=True)
         for serial, device in self.librenms.devices.items():
             if serial not in devserials:
@@ -252,7 +252,7 @@ class LibreNMS(Report):
         """
         success = 0
         for device in self._device_query.filter(
-            device_role__slug__in=INCLUDE_DEVICE_ROLES
+            role__slug__in=INCLUDE_DEVICE_ROLES
         ).exclude(MODEL_EXCLUDES):
             nb_vendor_string = str(device.device_type.manufacturer).lower()
             nb_model_string = str(device.device_type.model).lower()

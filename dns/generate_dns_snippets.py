@@ -483,7 +483,7 @@ class Records:
 
         """
         records = []
-        if not physical or device is None or device.device_role.slug != "server":
+        if not physical or device is None or device.role.slug != "server":
             records.append(ForwardRecord(zone, hostname, address.address))
         else:
             if device.status.value not in Netbox.NETBOX_DEVICE_MGMT_ONLY_STATUSES:

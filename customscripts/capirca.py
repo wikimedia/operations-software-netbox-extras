@@ -35,7 +35,7 @@ class GetHosts(Script):
             if ipaddress.assigned_object.mgmt_only:
                 return None, None
             # Skip non servers
-            if not ipaddress.assigned_object.device.device_role.slug == "server":
+            if not ipaddress.assigned_object.device.role.slug == "server":
                 return None, None
             # get the hostname
             hostname = ipaddress.assigned_object.device.name
