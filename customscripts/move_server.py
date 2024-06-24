@@ -44,7 +44,7 @@ class MoveServer(Script, Importer):
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         self.move_server(data)
-        return format_logs(self.log)
+        return format_logs(self.messages)
 
     def move_server(self, data):  # noqa: too-many-return-statements
         """Process a single device."""
@@ -148,7 +148,7 @@ class MoveServersUplinks(Script, Importer):
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         self.move_uplinks(data)
-        return format_logs(self.log)
+        return format_logs(self.messages)
 
     def move_uplinks(self, data):
         """Process all servers in the rack."""

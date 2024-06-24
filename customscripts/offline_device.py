@@ -1,3 +1,5 @@
+from _common import format_logs
+
 from dcim.models import Device
 from extras.scripts import Script, StringVar
 
@@ -23,7 +25,7 @@ class OfflineDevice(Script):
         except Exception as e:  # noqa: broad-exception-caught TODO: fix after upgrade
             self.log_failure(f"Failed to offline device(s) {data['device_name']}: {e}")
 
-        return self._format_logs()
+        return format_logs(self.messages)
 
     def _run(self, data):
         """Actually run the script."""
@@ -68,7 +70,3 @@ class OfflineDevice(Script):
 
         device.save()
         self.log_success(f"Successfully offlined device {device}")
-
-    def _format_logs(self):
-        """Return all log messages properly formatted."""
-        return "\n".join(f"[{level}] {message}" for level, message in self.log)

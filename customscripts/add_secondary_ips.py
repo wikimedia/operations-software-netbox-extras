@@ -63,4 +63,4 @@ class AddSecondaryIPs(Script, Importer):
                              f"with DNS name '{dns_name}'")
 
         self.log_success("Additional IPs added, please run sre.dns.netbox cookbook to update DNS records")
-        return format_logs(self.log)
+        return format_logs(self.messages)

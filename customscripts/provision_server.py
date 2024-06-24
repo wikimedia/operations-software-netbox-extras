@@ -63,7 +63,7 @@ class ProvisionServerNetworkCSV(Script):
             provision_script = ProvisionServerNetwork()
             provision_script.provision_server(data)
             self.log.extend(provision_script.log)
-        return format_logs(self.log)
+        return format_logs(self.messages)
 
     def _transform_csv(self, row):
         """Transform the CSV fields to Netbox objects."""
@@ -186,7 +186,7 @@ class ProvisionServerNetwork(Script, Importer):
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         self.provision_server(data)
-        return format_logs(self.log)
+        return format_logs(self.messages)
 
     def provision_server(self, data):  # noqa: too-many-return-statements
         """Process a single device."""
