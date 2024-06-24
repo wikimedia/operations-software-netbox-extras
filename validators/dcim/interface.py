@@ -40,7 +40,7 @@ class Main(CustomValidator):
 
         # MTU
         if (
-            hasattr(instance.connected_endpoint, "device")
+            instance.connected_endpoints_type == "dcim.interface"
             and instance.device.device_role.slug in NETWORK_ROLES  # Network devices
             and instance.mtu not in (9000, 9192)  # Ignore good MTU (NTT VPLS is 9000 max.)
             and not instance.lag  # Ignore LAG members
