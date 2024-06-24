@@ -431,7 +431,7 @@ class Importer:
             device_id=z_nbdevice.id,
             name__iregex=f"^({'|'.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}){port_num}$"
         ):
-            if z_nbdevice_int.connected_endpoint or z_nbdevice_int.count_ipaddresses > 0:
+            if z_nbdevice_int.connected_endpoints or z_nbdevice_int.count_ipaddresses > 0:
                 # TODO Script should abort at this point not just log the error
                 self.log_failure(f"{z_nbdevice.name}: We need to remove interface {z_nbdevice_int.name}, before "
                                  f"creating {z_iface}, however it still has a cable or IP address attached. "
@@ -451,10 +451,10 @@ class Importer:
 
     def _update_z_vlan(self, device_interface):
         """Update switch-port vlans if they don't match those on host."""
-        if not (device_interface.mode and device_interface.connected_endpoint):
+        if not (device_interface.mode and device_interface.connected_endpoints):
             return
-
-        z_nbiface = device_interface.connected_endpoint
+        # Only works with 1 connected endpoint (Netbox 4 upgrade)
+        z_nbiface = device_interface.connected_endpoints[0]
         int_changed = False
         if not z_nbiface.mode:
             z_nbiface.mode = device_interface.mode
@@ -777,7 +777,8 @@ class Importer:
                     self.log_info(f"Updated {z_nbiface.device.name} {z_nbiface.name} MTU to 9192")
 
                 # Create or update the cable if devices not already connected
-                if not (nbiface.connected_endpoint and nbiface.connected_endpoint == z_nbiface):
+                # Only works with 1 connected endpoint (Netbox 4 upgrade)
+                if not (nbiface.connected_endpoints and nbiface.connected_endpoints[0] == z_nbiface):
                     self._update_cable(lldp[iface], nbiface, z_nbiface)
 
         # Once all interfaces have been added to the device we can clean up any inconsistencies.
