@@ -1,3 +1,5 @@
+from _common import format_logs
+
 from dcim.models import Device
 from extras.scripts import BooleanVar, Script, ObjectVar
 
@@ -43,7 +45,7 @@ class ReplaceDevice(Script):
         except Exception as e:  # noqa: broad-exception-caught TODO fix after upgrade
             self.log_failure(f"Failed to run script. {e}")
 
-        return self._format_logs()
+        return format_logs(self.messages)
 
     def _copy_attributes(self, source_device, destination_device, attributes, remove_old=False):
         for attribute in attributes:
@@ -122,7 +124,3 @@ class ReplaceDevice(Script):
         destination_device.save()
 
         self.log_success(f"All done! {destination_device.asset_tag} replaced {source_device.asset_tag}")
-
-    def _format_logs(self):
-        """Return all log messages properly formatted."""
-        return "\n".join(f"[{level}] {message}" for level, message in self.log)

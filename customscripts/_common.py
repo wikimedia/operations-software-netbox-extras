@@ -52,10 +52,10 @@ IFACE_TYPE_TO_JUNIPER_PREFIX = {
 interface_ct = ContentType.objects.get_for_model(Interface)
 
 
-def format_logs(logs):
+def format_logs(messages: list[dict]) -> str:
     """Return all log messages properly formatted."""
     return "\n".join(
-        f"[{level}] {message}" for level, message in logs
+        f"[{message['status']} {message['message']}" for message in messages
     )
 
 
