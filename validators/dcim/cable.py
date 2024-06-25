@@ -59,13 +59,13 @@ class Main(CustomValidator):
         """
         if (
             cable.termination_a_type == interface_ct
-            and cable.termination_a.device.device_role.slug == "server"
+            and cable.termination_a.device.role.slug == "server"
             and cable.termination_a.device.site.slug in CORE_SITES
         ):
             return True
         if (
             cable.termination_b_type == interface_ct
-            and cable.termination_b.device.device_role.slug == "server"
+            and cable.termination_b.device.role.slug == "server"
             and cable.termination_b.device.site.slug in CORE_SITES
         ):
             return True

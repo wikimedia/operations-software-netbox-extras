@@ -33,7 +33,7 @@ class Main(CustomValidator):
         """Mandatory entry point"""
         # Name
         if (
-            instance.device.device_role.slug in NETWORK_ROLES
+            instance.device.role.slug in NETWORK_ROLES
             and not INTERFACES_REGEXP.fullmatch(instance.name)
         ):
             self.fail("Invalid name (must match the INTERFACES_REGEXP options)", field="name")
@@ -41,7 +41,7 @@ class Main(CustomValidator):
         # MTU
         if (
             instance.connected_endpoints_type == "dcim.interface"
-            and instance.device.device_role.slug in NETWORK_ROLES  # Network devices
+            and instance.device.role.slug in NETWORK_ROLES  # Network devices
             and instance.mtu not in (9000, 9192)  # Ignore good MTU (NTT VPLS is 9000 max.)
             and not instance.lag  # Ignore LAG members
             and not (
@@ -66,7 +66,7 @@ class Main(CustomValidator):
             "no-mon"
             not in str(instance.description)  # doesn't have "no-mon" in description
             and not instance.enabled  # disabled interface
-            and instance.device.device_role.slug in NETWORK_ROLES
+            and instance.device.role.slug in NETWORK_ROLES
         ):  # network devices only
             for attribute in attributes:
                 # Workaround bug T310590#8851738
