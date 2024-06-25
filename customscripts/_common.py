@@ -34,6 +34,7 @@ IMPORT_STATUS_ALLOWLIST = ("active",
 # Interfaces which we skip when importing
 INTERFACE_IMPORT_BLOCKLIST_RE = (re.compile(r"^cali.*"),  # Kubernetes
                                  re.compile(r"^tap.*"),  # Ganeti & Openstack
+                                 re.compile(r"^(tunl|ipip|ip6tnl)\d+"),  # IPIP tunnels
                                  re.compile(r"^lo.*$"),)  # Loopback
 
 # Hostname regexes that are immune to VIP removal because of a bug in provisioning them
