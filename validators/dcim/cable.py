@@ -1,14 +1,10 @@
 """Validator class for the Cable model."""
 
-from django.contrib.contenttypes.models import ContentType
-
 from dcim.choices import LinkStatusChoices
-from dcim.models import Cable, Interface
+from dcim.models import Cable, CircuitTermination, Interface
 from extras.validators import CustomValidator
 
 CORE_SITES = ("eqiad", "codfw")
-
-interface_ct = ContentType.objects.get_for_model(Interface)
 
 
 class Main(CustomValidator):
@@ -37,13 +33,12 @@ class Main(CustomValidator):
         Since cables do not have their own site objects, we need to get it from a subsidiary object, which,
         depending on the termination type, may be on the termination object or the device object in the termination.
         """
-        if (
-            cable.termination_a_type.name == "circuit termination"
-            and cable.termination_a.site
-        ):
-            return cable.termination_a.site.slug
-        if cable.termination_a.device and cable.termination_a.device.site:
-            return cable.termination_a.device.site.slug
+        # can't do cable.terminations.all() at validation time :(
+        for termination in list(cable.a_terminations) + list(cable.b_terminations):
+            if isinstance(termination, CircuitTermination):
+                return termination.site.slug
+            if isinstance(termination, Interface):
+                return termination.device.site.slug
         self.fail("Error: unable to find cable's site")
         return None  # to make pylint happy, but this stops above
 
@@ -57,16 +52,11 @@ class Main(CustomValidator):
             false: it's not.
 
         """
-        if (
-            cable.termination_a_type == interface_ct
-            and cable.termination_a.device.role.slug == "server"
-            and cable.termination_a.device.site.slug in CORE_SITES
-        ):
-            return True
-        if (
-            cable.termination_b_type == interface_ct
-            and cable.termination_b.device.role.slug == "server"
-            and cable.termination_b.device.site.slug in CORE_SITES
-        ):
-            return True
+        for termination in list(cable.a_terminations) + list(cable.b_terminations):
+            if (
+                isinstance(termination, Interface)
+                and termination.device.role.slug == "server"
+                and termination.device.site.slug in CORE_SITES
+            ):
+                return True
         return False

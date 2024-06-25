@@ -55,7 +55,7 @@ interface_ct = ContentType.objects.get_for_model(Interface)
 def format_logs(messages: list[dict]) -> str:
     """Return all log messages properly formatted."""
     return "\n".join(
-        f"[{message['status']} {message['message']}" for message in messages
+        f"[{message['status']}] {message['message']}" for message in messages
     )
 
 
@@ -106,10 +106,10 @@ def duplicate_cable_id(cable_id: int, site: Site) -> bool:
     """
     cables_with_same_id = Cable.objects.filter(label=cable_id)
     for cable in cables_with_same_id:
-        if cable.termination_a_type == interface_ct and cable.termination_a.device.site == site:
-            return True
-        if cable.termination_b_type == interface_ct and cable.termination_b.device.site == site:
-            return True
+        for termination in cable.terminations.all():
+            if isinstance(termination, Interface) and termination.device.site == site:
+                # TODO: raise AbortScript ?
+                return True
     return False
 
 
@@ -828,10 +828,8 @@ class Importer:
             color_human = dict(ColorChoices)[color]
             cable_type = CableTypeChoices.TYPE_DAC_PASSIVE
 
-        cable = Cable(termination_a=nbiface,
-                      termination_a_type=interface_ct,
-                      termination_b=z_nbiface,
-                      termination_b_type=interface_ct,
+        cable = Cable(a_terminations=[nbiface],
+                      b_terminations=[z_nbiface],
                       label=label,
                       color=color,
                       type=cable_type,
@@ -890,13 +888,11 @@ class Importer:
         interface.save()
 
     def find_remote_interface(self, interface: Interface) -> Optional[Interface]:
-        """Returns the remote side connected to an interface."""
-        # TODO in theory can have circuit termination and other types of object terminations
+        """Returns the remote side interface connected to an interface."""
         cable = interface.cable
         if not cable:
             return None
-        if cable.termination_a != interface:
-            return cable.termination_a
-        if cable.termination_b != interface:
-            return cable.termination_b
+        for termination in cable.terminations.all():
+            if termination.termination != interface and isinstance(termination.termination, Interface):
+                return termination.termination
         return None
