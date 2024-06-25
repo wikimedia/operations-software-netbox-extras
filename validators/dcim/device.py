@@ -51,7 +51,7 @@ class Main(CustomValidator):
             return
 
         # Check the site digit for hosts in the form host1001, skipping the ones with asset tags like wmf1234
-        if instance.device_role.slug == "server" and not instance.name.startswith("wmf"):
+        if instance.role.slug == "server" and not instance.name.startswith("wmf"):
             host_id = re.search(r"\d{4}", instance.name)
             if host_id and DATACENTER_NUMBERING_PREFIX[instance.site.slug] != str(host_id.group()[0]):
                 self.fail(f"Invalid name (first digit of {host_id.group()} must match device's site "
@@ -64,7 +64,7 @@ class Main(CustomValidator):
         self._validate_name(instance)
 
         # asset_tag
-        if instance.device_role.slug not in ROLES_OK_NO_ASSET_TAG:
+        if instance.role.slug not in ROLES_OK_NO_ASSET_TAG:
             if instance.asset_tag is None:
                 self.fail("Missing asset tag", field="asset_tag")
             if not ASSET_TAG_RE.fullmatch(instance.asset_tag):
@@ -89,7 +89,7 @@ class Main(CustomValidator):
             self.fail("Invalid procurement ticket (must start with RT or T then digits)", field="cf_ticket")
 
         # serial
-        if (instance.device_role.slug not in ROLES_OK_NO_SERIAL) and (
+        if (instance.role.slug not in ROLES_OK_NO_SERIAL) and (
             instance.status not in STATUS_DECOM
         ):
             if instance.serial is None or instance.serial == "":
@@ -100,7 +100,7 @@ class Main(CustomValidator):
 
         # status
         if (
-            instance.device_role.slug == "server"
+            instance.role.slug == "server"
             and instance.status == DeviceStatusChoices.STATUS_STAGED
         ):
             self.fail("Invalid role/status (servers must not use STAGED)", field="status")
