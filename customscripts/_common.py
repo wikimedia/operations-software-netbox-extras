@@ -11,7 +11,6 @@ from dcim.choices import CableTypeChoices, InterfaceTypeChoices, LinkStatusChoic
 from dcim.models import Cable, Device, Interface, Site, VirtualChassis
 from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix, VLAN
-from ipam.filtersets import PrefixFilterSet
 from utilities.choices import ColorChoices
 from virtualization.models import VMInterface
 
@@ -320,20 +319,23 @@ class Importer:
             self.log_warning(f"{address}: skipping SLAAC IP")
             return None
 
+        # Netbox always sorts the prefixes, .last() is the one closest to the given IP
+        parent_prefix = Prefix.objects.filter(prefix__net_contains=str(address)).last()
+        if not parent_prefix:
+            self.log_failure(f"Can't find parent prefix for {address}.")
+            return None
+
         if vip_exempt:
             # FIXME
             # this is a bug in our deployment of certain servers where some service addresses have
             # an incorrect netmask and aren't actually VIPs
             # figure out the actual netmask from the prefix
-            prefixq = PrefixFilterSet().search_contains(Prefix.objects.all(), "", str(address))
-            if not prefixq:
-                self.log_failure(f"Can't find matching prefix for {address} when fixing netmask!")
-                return None
-            realnetmask = max(i.prefix.prefixlen for i in prefixq)
+            realnetmask = parent_prefix.prefix.prefixlen
             address = ipaddress.ip_interface(f"{addr}/{realnetmask}")
             self.log_info("VIP exempt: Overriding provided netmask")
 
-        if (is_anycast or (address.network.prefixlen in (32, 128))):
+        # Don't treat /32-/128 IPs in routed VM ranges as VIPs
+        if (is_anycast or (address.network.prefixlen in (32, 128) and parent_prefix.role.slug != 'virtual-machines')):
             self._handle_vip(address, is_anycast)
             return None
 
