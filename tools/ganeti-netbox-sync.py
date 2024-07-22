@@ -111,7 +111,7 @@ class Netbox:
 
     def __post_init__(self) -> None:
         """Initialize additional instance variables."""
-        self.server_id = self.api.dcim.roles.get(slug="server").id
+        self.server_id = self.api.dcim.device_roles.get(slug="server").id
 
     def _create_resource(self, resource: str, func: Callable, data: Dict) -> Optional[pynetbox.core.response.Record]:
         """Create a resource, dry-run aware. Returns the created object or None on failure."""
