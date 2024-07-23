@@ -2,6 +2,7 @@
 
 import re
 
+from dcim.models import Interface
 from extras.validators import CustomValidator
 
 NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw")
@@ -40,7 +41,8 @@ class Main(CustomValidator):
 
         # MTU
         if (
-            instance.connected_endpoints_type == "dcim.interface"
+            instance.connected_endpoints
+            and isinstance(instance.connected_endpoints[0], Interface)
             and instance.device.role.slug in NETWORK_ROLES  # Network devices
             and instance.mtu not in (9000, 9192)  # Ignore good MTU (NTT VPLS is 9000 max.)
             and not instance.lag  # Ignore LAG members
