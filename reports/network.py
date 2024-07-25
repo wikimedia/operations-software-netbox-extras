@@ -24,6 +24,7 @@ SWITCHES_ROLES = ("asw", "msw", "cloudsw")
 NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw")
 ACCESS_INTERFACES_PREFIX = ("et-", "xe-", "ge-")
 NO_V6_DEVICE_NAME_PREFIXES = (
+    "an-redacteddb",
     "clouddb",
     "db",
     "dbprov",
