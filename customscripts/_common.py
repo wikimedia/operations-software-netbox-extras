@@ -11,7 +11,7 @@ from dcim.choices import CableTypeChoices, InterfaceTypeChoices, LinkStatusChoic
 from dcim.models import Cable, Device, Interface, Site, VirtualChassis
 from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix, VLAN
-from utilities.choices import ColorChoices
+from netbox.choices import ColorChoices
 from virtualization.models import VMInterface
 
 
