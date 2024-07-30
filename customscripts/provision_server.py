@@ -349,7 +349,7 @@ class ProvisionServerNetwork(Script, Importer):
                              "skipping IP allocation.")
             return iface
 
-        if prefix_v4.prefix.is_private():
+        if prefix_v4.prefix.ip.is_ipv4_private_use():
             if device.tenant and device.tenant.slug == FRACK_TENANT_SLUG:
                 dns_suffix = f"frack.{device.site.slug}.wmnet"
             else:
