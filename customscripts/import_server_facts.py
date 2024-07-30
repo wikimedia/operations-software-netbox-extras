@@ -2,7 +2,7 @@ import configparser
 
 import requests
 
-from _common import Importer, CONFIGFILE
+from wmf_scripts_imports.common import Importer, CONFIGFILE
 
 from dcim.models import Device
 from extras.scripts import Script, StringVar

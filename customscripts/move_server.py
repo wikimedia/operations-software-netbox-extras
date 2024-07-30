@@ -1,6 +1,6 @@
 import re
 
-from _common import Importer, format_logs, SWITCH_INTERFACES_PREFIX_ALLOWLIST
+from wmf_scripts_imports.common import Importer, format_logs, SWITCH_INTERFACES_PREFIX_ALLOWLIST
 
 from dcim.models import Device
 from extras.scripts import ChoiceVar, ObjectVar, Script, StringVar

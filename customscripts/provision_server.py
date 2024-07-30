@@ -10,7 +10,7 @@ from dcim.models import Device, Interface
 from extras.scripts import BooleanVar, ChoiceVar, FileVar, IntegerVar, ObjectVar, Script, StringVar
 from ipam.models import IPAddress, Prefix, VLAN
 
-from _common import find_tor, format_logs, port_to_iface, duplicate_cable_id, Importer
+from wmf_scripts_imports.common import find_tor, format_logs, port_to_iface, duplicate_cable_id, Importer
 
 MGMT_IFACE_NAME = "mgmt"
 PRIMARY_IFACE_NAME = "##PRIMARY##"

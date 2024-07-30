@@ -1,6 +1,6 @@
 from string import ascii_lowercase
 
-from _common import Importer, format_logs
+from wmf_scripts_imports.common import Importer, format_logs
 
 from dcim.models import Device
 from ipam.models import IPAddress, Prefix

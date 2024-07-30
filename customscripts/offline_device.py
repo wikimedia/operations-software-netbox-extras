@@ -1,4 +1,4 @@
-from _common import format_logs
+from wmf_scripts_imports.common import format_logs
 
 from dcim.models import Device
 from extras.scripts import Script, StringVar
