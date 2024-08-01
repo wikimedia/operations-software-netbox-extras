@@ -34,7 +34,8 @@ IMPORT_STATUS_ALLOWLIST = ("active",
 INTERFACE_IMPORT_BLOCKLIST_RE = (re.compile(r"^cali.*"),  # Kubernetes
                                  re.compile(r"^tap.*"),  # Ganeti & Openstack
                                  re.compile(r"^(tunl|ipip|ip6tnl)\d+"),  # IPIP tunnels
-                                 re.compile(r"^lo.*$"),)  # Loopback
+                                 re.compile(r"^lo.*$"),  # Loopback
+                                 re.compile(r"^docker\d+$"),)  # Docker
 
 # Hostname regexes that are immune to VIP removal because of a bug in provisioning them
 # this is a temporary work around until 618766 is merged. The "VIP"s on these hosts will
