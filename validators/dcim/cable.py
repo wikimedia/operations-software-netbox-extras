@@ -1,7 +1,8 @@
 """Validator class for the Cable model."""
 
+from circuits.models import CircuitTermination
 from dcim.choices import LinkStatusChoices
-from dcim.models import Cable, CircuitTermination, Interface
+from dcim.models import Cable, Interface
 from extras.validators import CustomValidator
 
 CORE_SITES = ("eqiad", "codfw")
@@ -10,7 +11,7 @@ CORE_SITES = ("eqiad", "codfw")
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
 
-    def validate(self, instance):
+    def validate(self, instance: Cable) -> None:
         """Mandatory entry point"""
         # label
         if instance.label:
@@ -27,7 +28,12 @@ class Main(CustomValidator):
         ):
             self.fail("Invalid label (must not be blank)", field="label")
 
-    def _get_site_slug(self, cable):
+        # Multiple connected endpoints
+        # Our automation only supports cables with a single termination on each side
+        if len(instance.a_terminations) > 1 or len(instance.b_terminations) > 1:
+            self.fail("Our automation doesn't support cables with multiple endpoints")
+
+    def _get_site_slug(self, cable: Cable) -> str:
         """Get a representative site slug given a cable.
 
         Since cables do not have their own site objects, we need to get it from a subsidiary object, which,
@@ -40,9 +46,9 @@ class Main(CustomValidator):
             if isinstance(termination, Interface):
                 return termination.device.site.slug
         self.fail("Error: unable to find cable's site")
-        return None  # to make pylint happy, but this stops above
+        return ''  # to make pylint happy, but this stops above
 
-    def _core_site_server(self, cable):
+    def _core_site_server(self, cable: Cable) -> bool:
         """Check if the cable is a core site server cable.
 
         Arguments:
