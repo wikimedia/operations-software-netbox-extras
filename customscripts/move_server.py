@@ -4,6 +4,7 @@ from wmf_scripts_imports.common import Importer, format_logs, SWITCH_INTERFACES_
 
 from dcim.models import Device
 from extras.scripts import ChoiceVar, ObjectVar, Script, StringVar
+from utilities.exceptions import AbortScript
 
 
 class MoveServer(Script, Importer):
@@ -102,9 +103,7 @@ class MoveServer(Script, Importer):
         z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type,
                                            list(z_old_nbiface.tagged_vlans.all()))
         if z_nbiface.cable:
-            # TODO replace with raise AbortScript
-            self.log_failure(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), skipping.")
-            return
+            raise AbortScript(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), stopping.")
 
         # Clean the old one
         self.clean_interface(z_old_nbiface)

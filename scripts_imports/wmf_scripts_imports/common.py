@@ -12,6 +12,7 @@ from dcim.models import Cable, Device, Interface, Site, VirtualChassis
 from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix, VLAN
 from netbox.choices import ColorChoices
+from utilities.exceptions import AbortScript
 from virtualization.models import VMInterface
 
 
@@ -60,7 +61,7 @@ def format_logs(messages: list[dict]) -> str:
     )
 
 
-def port_to_iface(port: int, nbdevice: Device, interface_type: str) -> Optional[str]:
+def port_to_iface(port: int, nbdevice: Device, interface_type: str) -> str:
     """Converts a numerical port ID, device and type to a logical interface name.
 
     Taking into consideration vendor specific naming, and devices constraints.
@@ -78,8 +79,7 @@ def port_to_iface(port: int, nbdevice: Device, interface_type: str) -> Optional[
     """
     # Specific to our only 1G model
     if interface_type != InterfaceTypeChoices.TYPE_1GE_FIXED and nbdevice.device_type.slug == "ex4300-48t":
-        # TODO once upgraded: raise AbortScript("Switch is 1G only, interface type must be 1G")
-        return None
+        raise AbortScript("Switch is 1G only, interface type must be 1G")
 
     if nbdevice.device_type.manufacturer.slug == 'juniper':
         prefix = IFACE_TYPE_TO_JUNIPER_PREFIX[interface_type]
@@ -90,8 +90,7 @@ def port_to_iface(port: int, nbdevice: Device, interface_type: str) -> Optional[
     if nbdevice.device_type.manufacturer.slug == 'dell':
         return f"Ethernet{str(port - 1)}"
 
-    # TODO once upgraded: raise AbortScript("Unsupported switch vendor (must be Dell or Juniper)")
-    return None
+    raise AbortScript("Unsupported switch vendor (must be Dell or Juniper)")
 
 
 def duplicate_cable_id(cable_id: int, site: Site) -> bool:
@@ -127,7 +126,7 @@ def find_tor(server: Device) -> Optional[Device]:
     switch = Device.objects.filter(rack=server.rack,
                                    role__slug__in=('asw', 'cloudsw'),
                                    status='active')
-    if len(switch) > 1:  # TODO raise AbortScript once Netbox is upgraded.
+    if len(switch) > 1:  # TODO raise AbortScript once Netbox is upgraded ?
         return None
     return switch[0]
 
@@ -438,15 +437,14 @@ class Importer:
             name__iregex=f"^({'|'.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}){port_num}$"
         ):
             if z_nbdevice_int.connected_endpoints or z_nbdevice_int.count_ipaddresses > 0:
-                # TODO Script should abort at this point not just log the error - AbortScript
-                self.log_failure(f"{z_nbdevice.name}: We need to remove interface {z_nbdevice_int.name}, before "
-                                 f"creating {z_iface}, however it still has a cable or IP address attached. "
-                                 "See https://wikitech.wikimedia.org/wiki/Netbox"
-                                 "#Error_removing_interface_after_speed_change", obj=z_nbdevice_int)
-            else:
-                z_nbdevice_int_name = z_nbdevice_int.name
-                z_nbdevice_int.delete()
-                self.log_success(f"{z_nbdevice}: deleted orphan interface {z_nbdevice_int_name}", obj=z_nbdevice)
+                raise AbortScript(f"{z_nbdevice.name}: We need to remove interface {z_nbdevice_int.name}, before "
+                                  f"creating {z_iface}, however it still has a cable or IP address attached. "
+                                  "See https://wikitech.wikimedia.org/wiki/Netbox"
+                                  "#Error_removing_interface_after_speed_change")
+
+            z_nbdevice_int_name = z_nbdevice_int.name
+            z_nbdevice_int.delete()
+            self.log_success(f"{z_nbdevice}: deleted orphan interface {z_nbdevice_int_name}", obj=z_nbdevice)
 
     def _get_iface_fmt(self, iface_name):
         """Returns iface_fmt object for correct PHY type based on Juniper interface naming conventions."""
@@ -590,11 +588,8 @@ class Importer:
         for parent_type in ['parent_bridge', 'parent_link']:
             parent = self._get_parent_interface(device, int_puppet_facts, parent_type)
             if parent_type in int_puppet_facts and not parent:
-                self.log_failure(f"PuppetDB reports {nbiface.name} has {parent_type} called"
-                                 f"{{ int_puppet_facts[parent_type] }} but no matching int in Netbox",
-                                 obj=nbiface)
-                # TODO: replace with raise AbortScript, for now continue as it won't break anything and edge-case
-                continue
+                raise AbortScript(f"PuppetDB reports {nbiface.name} has {parent_type} called"
+                                  f"{{ int_puppet_facts[parent_type] }} but no matching int in Netbox")
             # NB uses differnt terms for related ints
             nb_parent_type = 'parent' if parent_type == 'parent_link' else 'bridge'
             # If parent on Netbox int doesn't match what PuppetDB says then set it
@@ -856,10 +851,8 @@ class Importer:
             # Try to find if the interface exists
             z_nbiface = z_nbdevice.interfaces.get(name=z_iface)
             if z_nbiface.cable:
-                # TODO replace with raise AbortScript
-                self.log_warning(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), "
-                                 f"Skipping interface configuration, please do it manually", obj=z_nbiface)
-                return z_nbiface
+                raise AbortScript(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), "
+                                  "please fix it manually and re-run the script.")
         except ObjectDoesNotExist:  # If interface doesn't exist: create it
             z_nbiface = self._create_z_nbiface(z_nbdevice, z_iface, 9192, iface_fmt)
             z_nbiface.save()
@@ -883,7 +876,7 @@ class Importer:
         ifaces_connected = device.interfaces.filter(mgmt_only=False, cable__isnull=False)
         if len(ifaces_connected) != 1:
             ifaces_list = ", ".join(i.name for i in ifaces_connected)
-            # TODO replace with raise AbortScript
+            # TODO replace with raise AbortScript ?
             self.log_failure(f"{device}: either 0 or more than 1 connected interface: {ifaces_list},"
                              f" please update Netbox manually, skipping.", obj=device)
             return None
