@@ -189,7 +189,7 @@ class Importer:
         newdev_changed = False
         # heuristically determine if this is probably anycast
         if iface.startswith("lo:anycast"):
-            self.log_info(f"{address} on {iface} is being assigned as anycast.")
+            self.log_info(f"{address} on {iface} is being assigned as anycast.", obj=nbiface)
             role = "anycast"
         else:
             role = ""
@@ -198,14 +198,15 @@ class Importer:
         try:
             ipaddr = IPAddress.objects.get(address=str(address))
         except ObjectDoesNotExist:
-            self.log_info(f"Creating {address} and assigning to interface '{nbiface.name}'")
+            self.log_info(f"Creating {address} and assigning to interface '{nbiface.name}'", obj=nbiface)
             ipaddr = IPAddress(address=str(address),
                                assigned_object=nbiface, role=role)
             ipaddr.save()
 
         if ipaddr.role in IPADDRESS_ROLES_NONUNIQUE:
             self.log_warning(f"Skipping assigning existing IP {address} with role {ipaddr.role} to {iface}. "
-                             f"The IP might have the wrong netmask (expected /32 or /128 for VIP-like IPs)")
+                             f"The IP might have the wrong netmask (expected /32 or /128 for VIP-like IPs)",
+                             obj=ipaddr)
 
         oldiface = ipaddr.assigned_object
         if oldiface:
@@ -223,12 +224,12 @@ class Importer:
 
         if not ipaddr.assigned_object:
             # no interface assigned
-            self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
+            self.log_info(f"Assigning {address} to {newdev}:{nbiface}", obj=nbiface)
         elif olddev != newdev:
             # the ip address is assigned to a completely different device
             # and this is not a vdev, reassign
-            self.log_info(f"Taking IP address {ipaddr} from {olddev}:{ipaddr.assigned_object}")
-            self.log_info(f"Assigning {address} to {newdev}:{nbiface}")
+            self.log_info(f"Taking IP address {ipaddr} from {olddev}:{ipaddr.assigned_object}", obj=ipaddr)
+            self.log_info(f"Assigning {address} to {newdev}:{nbiface}", obj=nbiface)
             if is_ipv6 and olddev is not None and olddev.primary_ip6 == ipaddr:
                 olddev.primary_ip6 = None
             elif not is_ipv6 and olddev is not None and olddev.primary_ip4 == ipaddr:
@@ -254,30 +255,31 @@ class Importer:
             ipaddr_changed = True
 
         if ipaddr.status != "active" or ipaddr.status is None:
-            self.log_info(f"Non-active IP address {ipaddr} being assigned, old status {ipaddr.status}")
+            self.log_info(f"Non-active IP address {ipaddr} being assigned, old status {ipaddr.status}", obj=ipaddr)
 
         if is_primary:
             # Try assigning DNS name and getting information about DNS.
             if ipaddr.dns_name == networking["fqdn"]:
-                self.log_info(f"{networking['fqdn']} assign_name: {ipaddr.address} already has correct DNS name.")
+                self.log_info(f"{networking['fqdn']} assign_name: {ipaddr.address} already has correct DNS name.",
+                              obj=ipaddr)
             elif ipaddr.dns_name:
                 self.log_failure((f"{networking['fqdn']} assign_name: {ipaddr.address} has a different DNS name than"
-                                  f"expected: {ipaddr.dns_name}"))
+                                  f" expected: {ipaddr.dns_name}"), obj=ipaddr)
 
             if is_ipv6 and (newdev.primary_ip6 != ipaddr):
                 ipaddr.is_primary = True
                 ipaddr_changed = True
                 newdev.primary_ip6 = ipaddr
                 newdev_changed = True
-                self.log_info(f"Setting {ipaddr} as primary for {newdev}")
+                self.log_info(f"Setting {ipaddr} as primary for {newdev}", obj=ipaddr)
             elif not is_ipv6 and (newdev.primary_ip4 != ipaddr):
                 ipaddr.is_primary = True
                 ipaddr_changed = True
                 newdev.primary_ip4 = ipaddr
                 newdev_changed = True
-                self.log_info(f"Setting {ipaddr} as primary for {newdev}")
+                self.log_info(f"Setting {ipaddr} as primary for {newdev}", obj=ipaddr)
             else:
-                self.log_info(f"{ipaddr} is already primary for {newdev}")
+                self.log_info(f"{ipaddr} is already primary for {newdev}", obj=ipaddr)
 
         if newdev_changed:
             newdev.save()
@@ -349,7 +351,7 @@ class Importer:
         try:
             ipaddrs = IPAddress.objects.filter(address=str(address))
             if ipaddrs.count() > 1:
-                self.log_debug(f"{address} has multiple results, taking the 0th one")
+                self.log_debug(f"{address} has multiple results, taking the 0th one", obj=ipaddrs[0])
             elif ipaddrs.count() == 0:
                 raise ObjectDoesNotExist()
             ipaddr = ipaddrs[0]
@@ -359,13 +361,13 @@ class Importer:
                 ipaddr.assigned_object = None
                 ipaddr.status = "active"
                 ipaddr.save()
-                self.log_success(f"{address}: {role}, set to no interface and active")
+                self.log_success(f"{address}: {role}, set to no interface and active", obj=ipaddr)
         except ObjectDoesNotExist:
-            self.log_success(f"{address}: created, {role}, no interface and active")
             ipaddr = IPAddress(address=str(address),
                                assigned_object=None, role=role,
                                status='active')
             ipaddr.save()
+            self.log_success(f"{address}: created, {role}, no interface and active", obj=ipaddr)
 
     def _get_vc_member(self, neighbor, interface):
         """Return a Netbox VC member device based on a hostname and an interface."""
@@ -425,7 +427,7 @@ class Importer:
                               type=iface_fmt,
                               mtu=mtu)
         z_nbiface.save()
-        self.log_success(f"{z_nbdevice}: created interface {z_iface}")
+        self.log_success(f"{z_nbdevice}: created interface {z_iface}", obj=z_iface)
         return z_nbiface
 
     def _delete_orphan_nbiface(self, z_nbdevice, z_iface):
@@ -436,15 +438,15 @@ class Importer:
             name__iregex=f"^({'|'.join(SWITCH_INTERFACES_PREFIX_ALLOWLIST)}){port_num}$"
         ):
             if z_nbdevice_int.connected_endpoints or z_nbdevice_int.count_ipaddresses > 0:
-                # TODO Script should abort at this point not just log the error
+                # TODO Script should abort at this point not just log the error - AbortScript
                 self.log_failure(f"{z_nbdevice.name}: We need to remove interface {z_nbdevice_int.name}, before "
                                  f"creating {z_iface}, however it still has a cable or IP address attached. "
                                  "See https://wikitech.wikimedia.org/wiki/Netbox"
-                                 "#Error_removing_interface_after_speed_change")
+                                 "#Error_removing_interface_after_speed_change", obj=z_nbdevice_int)
             else:
                 z_nbdevice_int_name = z_nbdevice_int.name
                 z_nbdevice_int.delete()
-                self.log_success(f"{z_nbdevice}: deleted orphan interface {z_nbdevice_int_name}")
+                self.log_success(f"{z_nbdevice}: deleted orphan interface {z_nbdevice_int_name}", obj=z_nbdevice)
 
     def _get_iface_fmt(self, iface_name):
         """Returns iface_fmt object for correct PHY type based on Juniper interface naming conventions."""
@@ -464,20 +466,20 @@ class Importer:
             z_nbiface.mode = device_interface.mode
             int_changed = True
             self.log_info(f"Set {z_nbiface.device.name} {z_nbiface.name} mode to "
-                          f"{z_nbiface.mode} matching {device_interface.name}")
+                          f"{z_nbiface.mode} matching {device_interface.name}", obj=z_nbiface)
 
         if device_interface.untagged_vlan != z_nbiface.untagged_vlan:
             z_nbiface.untagged_vlan = device_interface.untagged_vlan
             int_changed = True
             self.log_info(f"Set {z_nbiface.device.name} {z_nbiface.name} untagged vlan to "
-                          f"{z_nbiface.untagged_vlan} matching {device_interface.name}")
+                          f"{z_nbiface.untagged_vlan} matching {device_interface.name}", obj=z_nbiface)
 
         tagged_vlans = list(device_interface.tagged_vlans.all())
         if tagged_vlans != list(z_nbiface.tagged_vlans.all()):
             z_nbiface.tagged_vlans.set(tagged_vlans)
             int_changed = True
             self.log_info(f"Set {z_nbiface.device.name} {z_nbiface.name} tagged vlans to "
-                          f"{tagged_vlans} matching {device_interface.name}")
+                          f"{tagged_vlans} matching {device_interface.name}", obj=z_nbiface)
 
         if int_changed:
             z_nbiface.save()
@@ -499,13 +501,13 @@ class Importer:
         # As well as if only one side exist (as it can't go to the good place)
         if nbcable != z_nbcable:
             if nbcable is not None:
-                self.log_success(f"{nbiface.device}: Remove cable from {nbiface}")
+                self.log_success(f"{nbiface.device}: Remove cable from {nbiface}", obj=nbiface)
                 nbcable.delete()
                 # After deleting the cable refresh the interface, otherwise
                 # nbiface.cable still returns the old cable
                 nbiface.refresh_from_db()
             if z_nbcable is not None:
-                self.log_success(f"{z_nbiface.device}: remove cable from {z_nbiface}")
+                self.log_success(f"{z_nbiface.device}: remove cable from {z_nbiface}", obj=z_nbiface)
                 z_nbcable.delete()
                 # After deleting the cable refresh the interface, otherwise
                 # z_nbiface.cable still returns the old cable
@@ -514,7 +516,7 @@ class Importer:
             # If they match and are not None, we still need to check if the cable ID is good
             if label and nbcable.label != label:
                 nbcable.label = label
-                self.log_success(f"{nbiface.device}: update label for {nbcable}: {label}")
+                self.log_success(f"{nbiface.device}: update label for {nbcable}: {label}", obj=nbcable)
                 nbcable.save()
         # Now we either have a fully correct cable, or nbcable == z_nbcable == None
         # In the 2nd case, we create the cable
@@ -589,7 +591,8 @@ class Importer:
             parent = self._get_parent_interface(device, int_puppet_facts, parent_type)
             if parent_type in int_puppet_facts and not parent:
                 self.log_failure(f"PuppetDB reports {nbiface.name} has {parent_type} called"
-                                 f"{{ int_puppet_facts[parent_type] }} but no matching int in Netbox")
+                                 f"{{ int_puppet_facts[parent_type] }} but no matching int in Netbox",
+                                 obj=nbiface)
                 # TODO: replace with raise AbortScript, for now continue as it won't break anything and edge-case
                 continue
             # NB uses differnt terms for related ints
@@ -597,7 +600,7 @@ class Importer:
             # If parent on Netbox int doesn't match what PuppetDB says then set it
             if getattr(nbiface, nb_parent_type, None) != parent:
                 setattr(nbiface, nb_parent_type, parent)
-                self.log_info(f"Attach interface {nbiface.name} to {parent_type} {parent}")
+                self.log_info(f"Attach interface {nbiface.name} to {parent_type} {parent}", obj=nbiface)
 
         # If it's a special type of int set type (physical only)
         if "kind" in int_puppet_facts and not is_vm:
@@ -607,7 +610,7 @@ class Importer:
                 self._set_subint_vlan(nbiface, int_puppet_facts)
             elif int_puppet_facts['kind'] == "bridge" and nbiface.type != InterfaceTypeChoices.TYPE_BRIDGE:
                 nbiface.type = InterfaceTypeChoices.TYPE_BRIDGE
-                self.log_info(f"Set interface '{nbiface.name}' to type bridge.")
+                self.log_info(f"Set interface '{nbiface.name}' to type bridge.", obj=nbiface)
 
         nbiface.save()
 
@@ -626,7 +629,8 @@ class Importer:
         try:
             subint_vlan = VLAN.objects.get(vid=int_puppet_facts['dot1q'], site=nbiface.device.site.id)
         except ObjectDoesNotExist:
-            self.log_warning(f"Configured Vlan ID {int_puppet_facts['dot1q']} on {nbiface.name} not found in Netbox")
+            self.log_warning(f"Configured Vlan ID {int_puppet_facts['dot1q']} on {nbiface.name} not found in Netbox",
+                             obj=nbiface)
             return
 
         # Set subint parent to tagged mode if required, and add vlan for this subint to it
@@ -634,11 +638,11 @@ class Importer:
             self._make_interface_tagged(nbiface.parent)
         nbiface.parent.tagged_vlans.add(subint_vlan.id)
         nbiface.parent.save()
-        self.log_info(f"Added vlan {int_puppet_facts['dot1q']} to {nbiface.parent.name} tagged vlans")
+        self.log_info(f"Added vlan {int_puppet_facts['dot1q']} to {nbiface.parent.name} tagged vlans", obj=nbiface)
         # Set correct untagged vlan for this sub-int
         nbiface.mode = "access"
         nbiface.untagged_vlan_id = subint_vlan.id
-        self.log_info(f"Set vlan {int_puppet_facts['dot1q']} as untagged vlan on {nbiface.name}")
+        self.log_info(f"Set vlan {int_puppet_facts['dot1q']} as untagged vlan on {nbiface.name}", obj=nbiface)
 
     def _make_interface_tagged(self, nbiface):
         """Sets netbox interface mode to 'tagged'.
@@ -690,7 +694,7 @@ class Importer:
         int_names = int_names + [name for name in interfaces.keys() if name not in int_names]
         return int_names
 
-    def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_vm=False):
+    def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_vm=False) -> list:
         # TODO: docstring
         # Resolve one device's interfaces and ip addresses based on a net_driver, networking and lldp dictionary
         # as would be obtained from PuppetDB under those key names.
@@ -713,7 +717,8 @@ class Importer:
                     if net_driver[primary_int_name]["speed"] == 10000:
                         device_interface.type = InterfaceTypeChoices.TYPE_10GE_SFP_PLUS
                 device_interface.save()
-                self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {device_interface.name}")
+                self.log_success(f"{device.name}: renamed ##PRIMARY## interface to {device_interface.name}",
+                                 obj=device_interface)
 
         # Import in correct order so parents added before children
         ordered_ints = self._get_ordered_ints(networking['interfaces'])
@@ -729,7 +734,7 @@ class Importer:
                 try:
                     nbiface = device.interfaces.get(name=iface)
                 except ObjectDoesNotExist:
-                    self.log_info(f"Creating interface {iface} for device {device}")
+                    self.log_info(f"Creating interface {iface} for device {device}", obj=device)
                     # only set MTU if it is non-default and not a loopback
                     mtu = None
                     if int_puppet_facts.get(mtu, 1500) != 1500 and iface != "lo":
@@ -778,7 +783,7 @@ class Importer:
                 if not z_nbiface.mtu:
                     z_nbiface.mtu = 9192
                     z_nbiface.save()
-                    self.log_info(f"Updated {z_nbiface.device.name} {z_nbiface.name} MTU to 9192")
+                    self.log_info(f"Updated {z_nbiface.device.name} {z_nbiface.name} MTU to 9192", obj=z_nbiface)
 
                 # Create or update the cable if devices not already connected
                 # Only works with 1 connected endpoint (Netbox 4 upgrade)
@@ -797,20 +802,23 @@ class Importer:
                 if device_interface.count_ipaddresses == 0 and (
                         (hasattr(device_interface, 'cable') and device_interface.cable is None)
                         or hasattr(device_interface, 'virtual_machine')):
-                    self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}")
+                    self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}",
+                                  obj=device)
                     device_interface.delete()
                 else:
                     self.log_failure(f"{device.name}: We want to remove interface {device_interface.name}, however "
                                      "it still has a cable or IP address associated with it. "
-                                     "See https://wikitech.wikimedia.org/wiki/Netbox#Would_like_to_remove_interface")
+                                     "See https://wikitech.wikimedia.org/wiki/Netbox#Would_like_to_remove_interface",
+                                     obj=device_interface)
         return output
 
-    def _validate_device(self, device):
+    def _validate_device(self, device: Device) -> bool:
         """Check if device is OK for import."""
         # Devices should be in the STATUS_ALLOWLIST to import
         if device.status not in IMPORT_STATUS_ALLOWLIST:
             self.log_failure(
-                f"{device} has an inappropriate status (must be one of {IMPORT_STATUS_ALLOWLIST}): {device.status}"
+                f"{device} has an inappropriate status (must be one of {IMPORT_STATUS_ALLOWLIST}): {device.status}",
+                obj=device
             )
             return False
 
@@ -839,8 +847,8 @@ class Importer:
                       type=cable_type,
                       status=LinkStatusChoices.STATUS_CONNECTED)
         cable.save()
-        self.log_success(f"{nbiface.device}: created cable {cable}")
-        self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}")
+        self.log_success(f"{nbiface.device}: created cable {cable}", obj=cable)
+        self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}", obj=nbiface)
 
     def _update_z_nbiface(self, z_nbdevice, z_iface, vlan, iface_fmt=None, tagged_vlans=None) -> Interface:
         """Create switch interface if needed and set vlan info."""
@@ -850,7 +858,7 @@ class Importer:
             if z_nbiface.cable:
                 # TODO replace with raise AbortScript
                 self.log_warning(f"There is already a cable on {z_nbiface.device}:{z_nbiface} (typo?), "
-                                 f"Skipping interface configuration, please do it manually")
+                                 f"Skipping interface configuration, please do it manually", obj=z_nbiface)
                 return z_nbiface
         except ObjectDoesNotExist:  # If interface doesn't exist: create it
             z_nbiface = self._create_z_nbiface(z_nbdevice, z_iface, 9192, iface_fmt)
@@ -860,14 +868,14 @@ class Importer:
         if tagged_vlans:
             z_nbiface.mode = 'tagged'
             z_nbiface.tagged_vlans.set(tagged_vlans)
-            self.log_success(f"{z_nbiface.device}:{z_nbiface} configured tagged vlans {tagged_vlans}")
+            self.log_success(f"{z_nbiface.device}:{z_nbiface} configured tagged vlans {tagged_vlans}", obj=z_nbiface)
         else:
             z_nbiface.mode = 'access'
         z_nbiface.mtu = 9192
         z_nbiface.untagged_vlan = vlan
         z_nbiface.enabled = True
         z_nbiface.save()
-        self.log_success(f"{z_nbiface.device}:{z_nbiface} configured vlan.")
+        self.log_success(f"{z_nbiface.device}:{z_nbiface} configured vlan.", obj=z_nbiface)
         return z_nbiface
 
     def find_primary_interface(self, device: Device) -> Optional[Interface]:
@@ -877,7 +885,7 @@ class Importer:
             ifaces_list = ", ".join(i.name for i in ifaces_connected)
             # TODO replace with raise AbortScript
             self.log_failure(f"{device}: either 0 or more than 1 connected interface: {ifaces_list},"
-                             f" please update Netbox manually, skipping.")
+                             f" please update Netbox manually, skipping.", obj=device)
             return None
         # At this point there is only the one.
         return ifaces_connected[0]
