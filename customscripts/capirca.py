@@ -90,5 +90,4 @@ class GetHosts(Script):
             if sub_count:
                 groups[group].add(hostname)
 
-        self.log_success("Generated successfully, see the output tab for result.")
         return self.generate_output(hosts, groups)
