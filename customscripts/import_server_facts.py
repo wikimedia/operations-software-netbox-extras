@@ -20,7 +20,7 @@ class ImportPuppetDB(Script, Importer):
     device = StringVar(description="The device name(s) to import interface(s) for (space separated)",
                        label="Devices")
 
-    def _validate_device(self, device: Device) -> bool:
+    def _validate_device(self, device: Union[Device, VirtualMachine]) -> bool:
         """Check if a device is OK to import from PuppetDB (overrides Importer's)"""
         if device.tenant:
             self.log_failure(f"{device} has non-null tenant {device.tenant} skipping.", obj=device)
@@ -72,11 +72,12 @@ class ImportPuppetDB(Script, Importer):
                 messages.extend(self._import_interfaces_for_device(device, net_driver, networking, lldp, False))
             self.log_info(f"{device} done.", obj=device)
         for device in vmdevices:
-            self.log_info(f"Processing virtual device {device}", obj=device)
-            net_driver, networking, lldp = self._get_networking_facts(cfg, device)
-            if net_driver is None:
-                continue
-            messages.extend(self._import_interfaces_for_device(device, net_driver, networking, lldp, True))
+            if self._validate_device(device):
+                self.log_info(f"Processing virtual device {device}", obj=device)
+                net_driver, networking, lldp = self._get_networking_facts(cfg, device)
+                if net_driver is None:
+                    continue
+                messages.extend(self._import_interfaces_for_device(device, net_driver, networking, lldp, True))
             self.log_info(f"{device} done.", obj=device)
 
         return "\n".join(messages)

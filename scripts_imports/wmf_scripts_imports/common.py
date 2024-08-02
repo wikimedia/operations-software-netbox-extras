@@ -1,7 +1,7 @@
 import ipaddress
 import re
 
-from typing import Optional
+from typing import Optional, Union
 
 from django.core.exceptions import ObjectDoesNotExist
 
@@ -13,7 +13,7 @@ from ipam.constants import IPADDRESS_ROLES_NONUNIQUE
 from ipam.models import IPAddress, Prefix, VLAN
 from netbox.choices import ColorChoices
 from utilities.exceptions import AbortScript
-from virtualization.models import VMInterface
+from virtualization.models import VMInterface, VirtualMachine
 
 
 # Prefix of neighbor interfaces names from LLDP to be considered
@@ -807,7 +807,7 @@ class Importer:
                                      obj=device_interface)
         return output
 
-    def _validate_device(self, device: Device) -> bool:
+    def _validate_device(self, device: Union[Device, VirtualMachine]) -> bool:
         """Check if device is OK for import."""
         # Devices should be in the STATUS_ALLOWLIST to import
         if device.status not in IMPORT_STATUS_ALLOWLIST:
