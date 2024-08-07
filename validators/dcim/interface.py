@@ -30,7 +30,7 @@ INTERFACES_REGEXP = re.compile(
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
 
-    def validate(self, instance):
+    def validate(self, instance, request):  # noqa: unused-argument
         """Mandatory entry point"""
         # Name
         if (

@@ -11,7 +11,7 @@ CORE_SITES = ("eqiad", "codfw")
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
 
-    def validate(self, instance: Cable) -> None:
+    def validate(self, instance: Cable, request) -> None:  # noqa: unused-argument
         """Mandatory entry point"""
         # label
         if instance.label:

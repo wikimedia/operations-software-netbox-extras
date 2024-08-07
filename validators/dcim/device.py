@@ -58,7 +58,7 @@ class Main(CustomValidator):
                           f"{instance.site.slug} digit)", field="name")
         # We could improve it once we got rid of all the hosts not matching this convention, like "flerovium".
 
-    def validate(self, instance):
+    def validate(self, instance, request):  # noqa: unused-argument
         """Mandatory entry point"""
         # Name
         self._validate_name(instance)

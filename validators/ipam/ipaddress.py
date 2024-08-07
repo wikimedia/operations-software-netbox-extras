@@ -9,7 +9,7 @@ DATACENTERS = ("eqiad", "codfw", "esams", "ulsfo", "eqsin", "drmrs", "magru")
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
 
-    def validate(self, instance):
+    def validate(self, instance, request):  # noqa: unused-argument
         """Mandatory entry point"""
         # dns_name
         if instance.dns_name:  # Accept empty values when there is no FQDN set
