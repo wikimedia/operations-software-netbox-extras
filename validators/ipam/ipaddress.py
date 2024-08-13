@@ -39,7 +39,7 @@ class Main(CustomValidator):
                 # More strictly validate the FQDNs of IPs without role connected to the interface of a server and
                 # being their primary IPs.
                 device = getattr(instance.assigned_object, "device", None)
-                if (device is not None and device.device_role.slug == "server" and not instance.role and (
+                if (device is not None and device.role.slug == "server" and not instance.role and (
                     (instance.family == 4 and device.primary_ip4 is instance)
                     or (instance.family == 6 and device.primary_ip6 is instance)
                 )):
