@@ -1,8 +1,6 @@
 import csv
 import io
 
-from string import ascii_lowercase
-
 from django.core.exceptions import ObjectDoesNotExist
 
 from dcim.choices import InterfaceTypeChoices
@@ -29,7 +27,6 @@ CSV_HEADERS = ('device',
                'vlan',
                'vlan_type',
                'skip_ipv6_dns',
-               'cassandra_instances',
                'z_port',
                'interface_type',
                'cable_id')
@@ -52,7 +49,7 @@ class ProvisionServerNetworkCSV(Script):
         description="Template and example on https://phabricator.wikimedia.org/F32411089"
     )
 
-    def run(self, data, commit):  # noqa: unused-argument
+    def run(self, data, commit: bool) -> None:  # noqa: unused-argument
         reader = csv.DictReader(io.StringIO(data['csv_file'].read().decode('utf-8')))
 
         for row in reader:
@@ -99,10 +96,6 @@ class ProvisionServerNetworkCSV(Script):
                 return None
         row['skip_ipv6_dns'] = bool(int(row['skip_ipv6_dns']))
         row['z_port'] = int(row['z_port'])
-        if row['cassandra_instances']:
-            row['cassandra_instances'] = int(row['cassandra_instances'])
-        else:
-            row['cassandra_instances'] = 0
 
         return row
 
@@ -158,13 +151,6 @@ class ProvisionServerNetwork(Script, Importer):
         query_params={'role': ('asw', 'cloudsw'), }
     )
 
-    cassandra_instances = ChoiceVar(
-        required=False,
-        choices=[(i, i) for i in range(6)],
-        label="How many Cassandra instances",
-        description=("To be set only for hosts that will run Cassandra. This many additional IPv4s will be "
-                     "allocated and their DNS name will be set to $HOSTNAME-a, $HOSTNAME-b, etc."),
-    )
     vlan_type = ChoiceVar(
         required=False,
         choices=[(value, value if value else "-" * 9) for value in VLAN_TYPES],
@@ -283,13 +269,7 @@ class ProvisionServerNetwork(Script, Importer):
             self.log_warning(f"{device}: Skipping Primary IP allocation with tenant {device.tenant}. "
                              "Primary IP allocation for Fundraising Tech is done manually in the DNS repository.")
         else:
-            try:
-                cassandra_instances = int(data["cassandra_instances"])
-            except ValueError:
-                # if this is not set it defaults to ''
-                cassandra_instances = 0
-            nbiface = self._assign_primary(device, vlan, iface_type=interface_type, skip_ipv6_dns=data["skip_ipv6_dns"],
-                                           cassandra_instances=cassandra_instances)
+            nbiface = self._assign_primary(device, vlan, iface_type=interface_type, skip_ipv6_dns=data["skip_ipv6_dns"])
 
             # Now that we're done with the primary interface, we tackle the switch side
             z_iface = port_to_iface(z_port, z_nbdevice, interface_type)
@@ -338,13 +318,8 @@ class ProvisionServerNetwork(Script, Importer):
 
         self._add_ip(ip_address, dns_name, prefix, iface, device)
 
-    def _assign_primary(self, device, vlan, *, iface_type, skip_ipv6_dns=False, cassandra_instances=0):
-        """Create a primary interface in the device and assign to it an IPv4, a mapped IPv6 and related DNS records.
-
-        If Cassandra instances is greater than zero allocate additional IPs for those with hostname
-        $HOSTNAME-a, $HOSTNAME-b, etc.
-
-        """
+    def _assign_primary(self, device, vlan, *, iface_type, skip_ipv6_dns=False):
+        """Create a primary interface in the device and assign to it an IPv4, a mapped IPv6 and related DNS records."""
         # We create the interface so IP assignment doesn't impact the physical layer
         iface = self._add_iface(PRIMARY_IFACE_NAME, device, iface_type=iface_type, mgmt=False)
 
@@ -382,12 +357,6 @@ class ProvisionServerNetwork(Script, Importer):
         device.primary_ip4 = ip_v4
         device.save()
         self.log_success(f"{device}: marked IPv4 address {ip_v4} as primary IPv4 for device.")
-
-        # Allocate additional IPs
-        for letter in ascii_lowercase[:cassandra_instances]:
-            extra_ip_address = prefix_v4.get_first_available_ip()
-            extra_dns_name = f"{device.name}-{letter}.{dns_suffix}"
-            self._add_ip(extra_ip_address, extra_dns_name, prefix_v4, iface, device)
 
         if prefix_v6 is None:
             self.log_warning(f"{device}: no IPv6 prefix found for VLAN {vlan.name}, skipping IPv6 allocation.")
