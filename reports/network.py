@@ -23,6 +23,8 @@ EXCLUDE_STATUSES = (
 SWITCHES_ROLES = ("asw", "msw", "cloudsw")
 NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw")
 ACCESS_INTERFACES_PREFIX = ("et-", "xe-", "ge-")
+
+# The list below can be audited using https://phabricator.wikimedia.org/P67286
 NO_V6_DEVICE_NAME_PREFIXES = (
     "an-redacteddb",
     "clouddb",
@@ -33,26 +35,14 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "dumpsdata",
     "es",
     "ganeti",
-    "graphite",
     "maps",
-    "mc",
-    "mc-gp",
     "ms-be",
-    "mw",
-    "mwlog",
-    "ores",
-    "parse",
     "pc",
     "restbase",
-    "restbase-dev",
-    "sessionstore",
     "snapshot",
     "thanos-fe",
-    "thumbor",
     "wdqs",
-    "wtp",
 )
-NO_V6_DEVICE_NAMES = ("scandium",)
 
 
 class Network(Report):
@@ -130,7 +120,7 @@ class Network(Report):
                 interface, f"Interface enabled but not connected on {interface.device}"
             )
 
-    def test_primary_ipv6(self):
+    def test_primary_ipv6(self) -> None:
         """Report servers that either have a missing primary_ip6 or have a primary_ip6 without a DNS name set.
 
         To help with T253173.
@@ -143,7 +133,7 @@ class Network(Report):
             if not device.primary_ip6:
                 self.log_failure(device, "Missing primary IPv6")
                 continue
-            if device.name in NO_V6_DEVICE_NAMES or any(
+            if any(
                 re.match(rf"{name}[1-9]", device.name)
                 for name in NO_V6_DEVICE_NAME_PREFIXES
             ):
