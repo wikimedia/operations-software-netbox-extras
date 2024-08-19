@@ -66,7 +66,7 @@ class Main(CustomValidator):
     def validate(self, instance, request):  # noqa: unused-argument
         """Mandatory entry point"""
         # Ignore all the non-network devices interfaces
-        if instance.device.device_role.slug not in NETWORK_ROLES:
+        if instance.device.role.slug not in NETWORK_ROLES:
             return
 
         # Name
