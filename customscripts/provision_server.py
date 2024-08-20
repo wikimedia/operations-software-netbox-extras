@@ -261,9 +261,8 @@ class ProvisionServerNetwork(Script, Importer):
                 return
         else:
             vlan = data["vlan"]
-
-        if not self._is_vlan_valid(vlan, device):
-            return
+            if not self._is_vlan_valid(vlan, device):
+                return
 
         if device.tenant is not None and device.tenant.slug == FRACK_TENANT_SLUG:
             self.log_warning(f"{device}: Skipping Primary IP allocation with tenant {device.tenant}. "
