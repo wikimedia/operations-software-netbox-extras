@@ -167,8 +167,7 @@ class ProvisionServerNetwork(Script, Importer):
         model=VLAN,
         query_params={
             "group": "production",
-            "status": "active",
-            "name__nisw": [f"{vlan}{i}-" for vlan in VLAN_TYPES if vlan for i in (1, 2)],
+            "status": "active"
         }
     )
 
