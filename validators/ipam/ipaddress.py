@@ -1,5 +1,6 @@
 import re
 
+from dcim.choices import DeviceStatusChoices
 from extras.validators import CustomValidator
 
 # TODO: query them or import them from wmflib
@@ -61,3 +62,7 @@ class Main(CustomValidator):
             allowed = re.compile(r"(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
             if not all(allowed.match(x) for x in instance.dns_name.split(".")):
                 self.fail("Invalid DNS name: must be a valid FQDN", field="dns_name")
+        else:  # Prevent removing a mgmt_dns name on ACTIVE servers.
+            if (getattr(instance.assigned_object, "mgmt_only", False)
+                    and instance.assigned_object.device.status == DeviceStatusChoices.STATUS_ACTIVE):
+                self.fail("Invalid DNS name: can't be empty on ACTIVE server's mgmt interface IP", field="dns_name")
