@@ -39,7 +39,6 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "pc",
     "restbase",
     "thanos-fe",
-    "wdqs",
 )
 
 
