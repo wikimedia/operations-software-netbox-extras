@@ -2,6 +2,8 @@ import csv
 import io
 import re
 
+from typing import Optional
+
 from django.core.exceptions import ObjectDoesNotExist
 
 from dcim.choices import InterfaceTypeChoices
@@ -62,7 +64,8 @@ class ProvisionServerNetworkCSV(Script):
         description="Template and example on https://phabricator.wikimedia.org/F32411089"
     )
 
-    def run(self, data, commit: bool) -> None:  # noqa: unused-argument
+    def run(self, data: dict, commit: bool) -> str:  # noqa: unused-argument
+        """Run the script and return all the log messages."""
         reader = csv.DictReader(io.StringIO(data['csv_file'].read().decode('utf-8')))
 
         for row in reader:
@@ -79,34 +82,34 @@ class ProvisionServerNetworkCSV(Script):
             self.log.extend(provision_script.log)
         return format_logs(self.messages)
 
-    def _transform_csv(self, row):
+    def _transform_csv(self, row: dict) -> dict:
         """Transform the CSV fields to Netbox objects."""
         for header in CSV_HEADERS:
             try:
                 row[header]
             except KeyError:
                 self.log_failure(f"CSV header {header} missing, skipping.")
-                return None
+                return {}
         # Ensure that no cells are missing, not empty cells, but missing cells
         if any(value is None for value in row.values()):
             self.log_failure(f"{row['device']}: missing CSV cells, skipping.")
-            return None
+            return {}
         try:
             row['device'] = Device.objects.get(name=row['device'])
         except ObjectDoesNotExist:
             self.log_failure(f"{row['device']}: device not found, skipping.")
-            return None
+            return {}
         try:
             row['z_nbdevice'] = Device.objects.get(name=row['z_nbdevice'])
         except ObjectDoesNotExist:
             self.log_failure(f"{row['device']}: switch {row['z_nbdevice']} not found, skipping.")
-            return None
+            return {}
         if row['vlan']:
             try:
                 row['vlan'] = VLAN.objects.get(name=row['vlan'], site=row['device'].site)
             except ObjectDoesNotExist:
                 self.log_failure(f"{row['device']}: vlan {row['vlan']} not found, skipping.")
-                return None
+                return {}
         row['z_port'] = int(row['z_port'])
 
         return row
@@ -300,8 +303,7 @@ class ProvisionServerNetwork(Script, Importer):
         if assign_mgmt:
             self._assign_mgmt(device, mac_address=data["mgmt_mac"])
 
-    # TODO mac_address is a 'str', so must be set to '' instead of None
-    def _assign_mgmt(self, device: Device, mac_address=None) -> None:
+    def _assign_mgmt(self, device: Device, mac_address: str = '') -> None:
         """Create a management interface in the device and assign to it a management IP."""
         iface_type = InterfaceTypeChoices.TYPE_1GE_FIXED
         iface = self._add_iface(
@@ -396,7 +398,7 @@ class ProvisionServerNetwork(Script, Importer):
         # Whatever happen, as long as the interface is created, return it
         return iface
 
-    def _get_vlan(self, vlan_type, device):
+    def _get_vlan(self, vlan_type: str, device: Device) -> Optional[VLAN]:
         """Find and return the appropriate VLAN that matches the type and device location."""
         new_vlan_name = f"{vlan_type}1-{device.rack.name.lower()}-{device.site.slug}"
 
@@ -424,7 +426,7 @@ class ProvisionServerNetwork(Script, Importer):
                     f"{device}: unable to find VLAN with name {old_vlan_name} or {new_vlan_name}, skipping.")
         return None
 
-    def _is_vlan_valid(self, vlan, device):
+    def _is_vlan_valid(self, vlan: VLAN, device: Device) -> bool:
         """Try to ensure that the VLAN matches the device location."""
         if vlan.site != device.site:
             self.log_failure(
@@ -458,7 +460,8 @@ class ProvisionServerNetwork(Script, Importer):
 
         return True
 
-    def _add_iface(self, name, device, *, iface_type, mgmt=False, mac_address=None):
+    def _add_iface(self, name: str, device: Device, *,
+                   iface_type: str, mgmt: bool = False, mac_address: str = '') -> Interface:
         """Add an interface to the device."""
         iface = Interface(
             name=name, mgmt_only=mgmt, device=device, type=iface_type,
@@ -467,7 +470,8 @@ class ProvisionServerNetwork(Script, Importer):
         self.log_success(f"{device}: created interface {name} (mgmt={mgmt})")
         return iface
 
-    def _add_ip(self, address, dns_name, prefix, iface, device):
+    # TODO is "address" a str, a IPAddress or both ?
+    def _add_ip(self, address, dns_name: str, prefix: Prefix, iface: Interface, device: Device) -> Interface:
         """Assign an IP address to the interface."""
         address = IPAddress(
             address=address,
