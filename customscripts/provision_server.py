@@ -1,11 +1,12 @@
 import csv
 import io
+import re
 
 from django.core.exceptions import ObjectDoesNotExist
 
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Device, Interface
-from extras.scripts import BooleanVar, ChoiceVar, FileVar, IntegerVar, ObjectVar, Script, StringVar
+from extras.scripts import ChoiceVar, FileVar, IntegerVar, ObjectVar, Script, StringVar
 from ipam.models import IPAddress, Prefix, VLAN
 
 from wmf_scripts_imports.common import find_tor, format_logs, port_to_iface, duplicate_cable_id, Importer
@@ -26,7 +27,6 @@ CSV_HEADERS = ('device',
                'z_nbdevice',
                'vlan',
                'vlan_type',
-               'skip_ipv6_dns',
                'z_port',
                'interface_type',
                'cable_id')
@@ -34,6 +34,19 @@ CSV_HEADERS = ('device',
 # Some vendors force us to use the MAC address
 # of the mgmt interface in the initial DHCP config.
 MGMT_MAC_ADDRESS_VENDOR_SLUGS = ['supermicro']
+
+
+SKIP_V6_DNS_PREFIXES = (
+    "an-redacteddb",
+    "clouddb",
+    "db",
+    "dbproxy",
+    "dbstore",
+    "es",
+    "maps",
+    "pc",
+    "restbase",
+)
 
 
 class ProvisionServerNetworkCSV(Script):
@@ -94,7 +107,6 @@ class ProvisionServerNetworkCSV(Script):
             except ObjectDoesNotExist:
                 self.log_failure(f"{row['device']}: vlan {row['vlan']} not found, skipping.")
                 return None
-        row['skip_ipv6_dns'] = bool(int(row['skip_ipv6_dns']))
         row['z_port'] = int(row['z_port'])
 
         return row
@@ -136,13 +148,6 @@ class ProvisionServerNetwork(Script, Importer):
 
     cable_id = StringVar(label="Cable ID", required=False)
 
-    skip_ipv6_dns = BooleanVar(
-        required=False,
-        label="Skip IPv6 DNS records.",
-        description=("Skip the generation of the IPv6 DNS records. Enable if the devices don't yet fully support "
-                     "IPv6."),
-    )
-
     z_nbdevice = ObjectVar(
         label="Switch",
         required=False,
@@ -179,13 +184,13 @@ class ProvisionServerNetwork(Script, Importer):
         regex="^[a-fA-F0-9]{2}(:[a-fA-F0-9]{2}){5}$"
     )
 
-    def run(self, data, commit):  # noqa: unused-argument
+    def run(self, data: dict, commit: bool) -> str:  # noqa: unused-argument
         """Run the script and return all the log messages."""
         self.log_info(f"Called with parameters: {data}")
         self.provision_server(data)
         return format_logs(self.messages)
 
-    def provision_server(self, data):  # noqa: too-many-return-statements
+    def provision_server(self, data: dict) -> None:  # noqa: too-many-return-statements
         """Process a single device."""
         device = data['device']
         z_nbdevice = data['z_nbdevice']
@@ -263,11 +268,18 @@ class ProvisionServerNetwork(Script, Importer):
             if not self._is_vlan_valid(vlan, device):
                 return
 
+        skip_ipv6_dns = False
+        if any(
+            re.match(rf"{name}[1-9]", device.name)
+            for name in SKIP_V6_DNS_PREFIXES
+        ):
+            skip_ipv6_dns = True
+
         if device.tenant is not None and device.tenant.slug == FRACK_TENANT_SLUG:
             self.log_warning(f"{device}: Skipping Primary IP allocation with tenant {device.tenant}. "
                              "Primary IP allocation for Fundraising Tech is done manually in the DNS repository.")
         else:
-            nbiface = self._assign_primary(device, vlan, iface_type=interface_type, skip_ipv6_dns=data["skip_ipv6_dns"])
+            nbiface = self._assign_primary(device, vlan, iface_type=interface_type, skip_ipv6_dns=skip_ipv6_dns)
 
             # Now that we're done with the primary interface, we tackle the switch side
             z_iface = port_to_iface(z_port, z_nbdevice, interface_type)
@@ -287,7 +299,8 @@ class ProvisionServerNetwork(Script, Importer):
         if assign_mgmt:
             self._assign_mgmt(device, mac_address=data["mgmt_mac"])
 
-    def _assign_mgmt(self, device, mac_address=None):
+    # TODO mac_address is a 'str', so must be set to '' instead of None
+    def _assign_mgmt(self, device: Device, mac_address=None) -> None:
         """Create a management interface in the device and assign to it a management IP."""
         iface_type = InterfaceTypeChoices.TYPE_1GE_FIXED
         iface = self._add_iface(
@@ -316,7 +329,8 @@ class ProvisionServerNetwork(Script, Importer):
 
         self._add_ip(ip_address, dns_name, prefix, iface, device)
 
-    def _assign_primary(self, device, vlan, *, iface_type, skip_ipv6_dns=False):
+    def _assign_primary(self, device: Device, vlan: VLAN, *,
+                        iface_type: str, skip_ipv6_dns: bool = False) -> Interface:
         """Create a primary interface in the device and assign to it an IPv4, a mapped IPv6 and related DNS records."""
         # We create the interface so IP assignment doesn't impact the physical layer
         iface = self._add_iface(PRIMARY_IFACE_NAME, device, iface_type=iface_type, mgmt=False)
