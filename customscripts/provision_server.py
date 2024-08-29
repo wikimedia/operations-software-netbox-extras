@@ -243,6 +243,7 @@ class ProvisionServerNetwork(Script, Importer):
             self.log_failure(
                 f"The device's vendor, {device.device_type.manufacturer.slug}, "
                 "requires to provide the MAC address of the mgmt interface.")
+            return
 
         ifaces = device.interfaces.all()
         #  If the device have interface(s)
