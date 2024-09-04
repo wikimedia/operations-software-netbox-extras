@@ -858,16 +858,17 @@ class Importer:
             z_nbiface = self._create_z_nbiface(z_nbdevice, z_iface, 9192, iface_fmt)
             z_nbiface.save()
 
-        # Then configure it
-        if tagged_vlans:
-            z_nbiface.mode = 'tagged'
-            z_nbiface.tagged_vlans.set(tagged_vlans)
-            self.log_success(f"{z_nbiface.device}:{z_nbiface} configured tagged vlans {tagged_vlans}", obj=z_nbiface)
-        else:
-            z_nbiface.mode = 'access'
+        # Then configure it - operations need to be in this order, and iface saved before tagged vlans added
+        z_nbiface.mode = 'access'
         z_nbiface.mtu = 9192
         z_nbiface.untagged_vlan = vlan
         z_nbiface.enabled = True
+        if tagged_vlans:
+            z_nbiface.mode = 'tagged'
+            z_nbiface.save()
+            z_nbiface.tagged_vlans.set(tagged_vlans)
+            self.log_success(f"{z_nbiface.device}:{z_nbiface} configured tagged vlans "
+                             f"{[vlan.name for vlan in z_nbiface.tagged_vlans.all()]}", obj=z_nbiface)
         z_nbiface.save()
         self.log_success(f"{z_nbiface.device}:{z_nbiface} configured vlan.", obj=z_nbiface)
         return z_nbiface

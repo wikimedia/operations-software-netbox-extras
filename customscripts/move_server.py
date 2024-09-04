@@ -171,11 +171,11 @@ class MoveServersUplinks(Script, Importer):
                 self.log_info(f"{server.name} already connected to {new_switch}, skipping.")
                 continue
             # Only works with Juniper
-            z_iface = f"{z_old_nbiface.name.split('-')[0]}-0/0/{str(server.position - 1)}"
+            z_iface = f"{z_old_nbiface.name.split('-')[0]}-0/0/{int(server.position) - 1}"
 
             # Configure the new switch interface
             z_nbiface = self._update_z_nbiface(new_switch, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type,
-                                               list(z_old_nbiface.tagged_vlans.all()))
+                                               [vlan.id for vlan in z_old_nbiface.tagged_vlans.all()])
 
             # Clean the old one
             self.clean_interface(z_old_nbiface)
