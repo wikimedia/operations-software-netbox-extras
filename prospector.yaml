@@ -46,6 +46,7 @@ pylint:
     - too-many-branches # TODO to be re-enabled in the future
     - too-many-statements # TODO to be re-enabled in the future
     - too-many-branches # TODO to be re-enabled in the future
+    - too-many-positional-arguments # TODO to be re-enabled in the future
     - no-member # TODO to be re-enabled in the future
     - protected-access # TODO to be re-enabled in the future
   options:
