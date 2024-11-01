@@ -327,11 +327,10 @@ class Importer:
             self.log_failure(f"Can't find parent prefix for {address}.")
             return None
 
-        if vip_exempt:
+        if address.network.prefixlen in (32, 128) and vip_exempt:
             # FIXME
             # this is a bug in our deployment of certain servers where some service addresses have
-            # an incorrect netmask and aren't actually VIPs
-            # figure out the actual netmask from the prefix
+            # a /32 or /128 netmask but aren't actually VIPs, need to figure out the correct netmask
             realnetmask = parent_prefix.prefix.prefixlen
             address = ipaddress.ip_interface(f"{addr}/{realnetmask}")
             self.log_info("VIP exempt: Overriding provided netmask")
