@@ -22,7 +22,6 @@ class Revert(Script):
     request_or_change_id = StringVar(description="Request ID or change IDs (coma separated) from the changelog page.",
                                      label="Request/Change")
 
-
     def run(self, data: dict, commit: bool) -> None:  # noqa: unused-argument
         """Execute script as per Script interface."""
         request_or_change_id = data["request_or_change_id"]

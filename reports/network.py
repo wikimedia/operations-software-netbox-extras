@@ -217,7 +217,7 @@ class Network(Report):
                 and ipaddress.assigned_object.device.tenant.slug == "fr-tech"
             ):
                 tenant = "frack."
-            expected_fqdn = "{}.mgmt.{}{}.wmnet".format( # noqa: consider-using-f-string
+            expected_fqdn = "{}.mgmt.{}{}.wmnet".format(  # noqa: consider-using-f-string
                 ipaddress.assigned_object.device.name,
                 tenant,
                 ipaddress.assigned_object.device.site.slug,
