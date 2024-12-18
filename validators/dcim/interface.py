@@ -74,7 +74,7 @@ class Main(CustomValidator):
             self.fail("Invalid name (must match the INTERFACES_REGEXP options)", field="name")
 
         # Validate IRB interface names are valid, i.e. correspond to an actual vlan
-        if instance.name.startswith("irb"):
+        if instance.name.startswith("irb") and instance.name != "irb":
             try:
                 vid = int(instance.name.split(".")[1])
                 VLAN.objects.get(vid=vid, site=instance.device.site.id)
