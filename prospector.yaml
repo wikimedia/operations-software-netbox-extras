@@ -52,6 +52,7 @@ pylint:
   options:
     max-line-length: 120
     max-args: 7
+    max-positional-arguments: 7
     max-attributes: 20
     max-locals: 25
     include-naming-hint: true
