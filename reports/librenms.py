@@ -303,7 +303,7 @@ class LibreNMS(Report):
                     self.log_failure(
                         device,
                         (
-                            "mismatch between LibreNMS and Netbox inventory; Netbox: {nb_vendor_model_string}"
+                            f"mismatch between LibreNMS and Netbox inventory; Netbox: {nb_vendor_model_string}"
                             f" (vendor model), LibreNMS: {librenms_vendor_model_string} (vendor model)"
                         )
                     )
