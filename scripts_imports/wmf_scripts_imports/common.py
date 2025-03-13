@@ -791,6 +791,14 @@ class Importer:
                     self._update_cable(lldp[iface], nbiface, z_nbiface)
 
         # Once all interfaces have been added to the device we can clean up any inconsistencies.
+        # First remove any child interfaces that are no longer in PuppetDB
+        for child_interface in device.interfaces.filter(parent__isnull=False):
+            if child_interface not in networking["interfaces"]:
+                self.log_info(f"{device.name}: removing child interface no longer in puppet {child_interface.name}",
+                              obj=device)
+                child_interface.delete()
+
+        # Now process the remaining interfaces
         for device_interface in device.interfaces.all():
             # Update switch-port vlans if they don't match those on host
             self._update_z_vlan(device_interface)
