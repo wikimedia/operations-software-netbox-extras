@@ -793,7 +793,7 @@ class Importer:
         # Once all interfaces have been added to the device we can clean up any inconsistencies.
         # First remove any child interfaces that are no longer in PuppetDB
         for child_interface in device.interfaces.filter(parent__isnull=False):
-            if child_interface not in networking["interfaces"]:
+            if child_interface.name not in networking["interfaces"]:
                 self.log_info(f"{device.name}: removing child interface no longer in puppet {child_interface.name}",
                               obj=device)
                 child_interface.delete()
@@ -802,7 +802,6 @@ class Importer:
         for device_interface in device.interfaces.all():
             # Update switch-port vlans if they don't match those on host
             self._update_z_vlan(device_interface)
-
             # Remove any netbox interfaces that aren't in puppet facts if it's safe
             if (device_interface.name not in networking["interfaces"]
                and device_interface.name not in ("mgmt", "##PRIMARY##")):
