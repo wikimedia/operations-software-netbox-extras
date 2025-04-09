@@ -284,10 +284,11 @@ class LibreNMS(Report):
                         )
                     )
             elif device.serial in self.librenms.inventory:
+                # Values might be present in librenms but be None, convert them to strings
                 librenms_vendor_model_string = (
-                    self.librenms.inventory[device.serial]["vendor"]
+                    self.librenms.inventory[device.serial].get("vendor") or ""
                     + " "
-                    + self.librenms.inventory[device.serial]["model"]
+                    + self.librenms.inventory[device.serial].get("model") or ""
                 )
                 if (
                     nb_vendor_model_string in librenms_vendor_model_string
