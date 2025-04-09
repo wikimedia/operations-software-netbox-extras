@@ -33,6 +33,7 @@ class Accounting(Report):
         """Generic init."""
         super().__init__(*args, **kwargs)
         self.assets = {}
+        self.skipped = {}
         self.multiple_serials = {}
         self.accounting_client = None
 
@@ -46,7 +47,7 @@ class Accounting(Report):
             config["accounting"]["sheet_id"],
             config["accounting"]["motherboard_swaps_range"],  # See https://phabricator.wikimedia.org/T358542
         )
-        self.assets = self.get_assets_from_accounting(
+        self.assets, self.skipped = self.get_assets_from_accounting(
             config["accounting"]["sheet_id"],
             config["accounting"]["include_range"],
             config["accounting"]["exclude_range"],
@@ -109,21 +110,26 @@ class Accounting(Report):
         # do some light parsing of the data, and store this in a dict keyed
         # by serial number, as this is the key we use for matching
         assets = {}
+        skipped = []
         for row in values[2:]:
             # skip rows with merged columns, like page header, date sections etc.
             if len(row) < len(column_names):
                 continue
 
-            # use the column names for a dict's keys and the row as values
-            asset = dict(zip(column_names, row))
-            asset_tag = asset["asset_tag"]
-            asset["date"] = datetime.strptime(asset["date"], "%m/%d/%Y").date()
+            try:
+                # use the column names for a dict's keys and the row as values
+                asset = dict(zip(column_names, row))
+                asset_tag = asset["asset_tag"]
+                asset["date"] = datetime.strptime(asset["date"], "%m/%d/%Y").date()
 
-            # if the motherboard was swapped, use the new serial
-            if asset_tag in self.multiple_serials:
-                asset["serial"] = self.multiple_serials[asset_tag].get("new_serial", "")
+                # if the motherboard was swapped, use the new serial
+                if asset_tag in self.multiple_serials:
+                    asset["serial"] = self.multiple_serials[asset_tag].get("new_serial", "")
 
-            serial = asset["serial"]
+                serial = asset["serial"]
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                skipped.append((row, str(e)))
+                continue
 
             # skip items without a serial number; we use that as key to compare
             if serial.upper() in ("N/A", ""):
@@ -150,7 +156,7 @@ class Accounting(Report):
 
             assets[serial] = asset
 
-        return assets
+        return assets, skipped
 
     def get_multiple_serials_from_accounting(self, sheet_id, data_range):
         """Retieve both serial numbers for hosts with swapped motherboards out of warranty.
@@ -253,3 +259,8 @@ class Accounting(Report):
                 device_matches += 1
 
         self.log_success(None, f"{device_matches} devices ({oldest_date} to {newest_date}) matched")
+
+    def test_invalid_rows(self):
+        """Tests if there are invalid rows in the Accounting spreadsheet that were skipped."""
+        for row, error in self.skipped:
+            self.log_failure(None, f"Invalid Accounting row raised '{error}':\n{row}")
