@@ -57,7 +57,10 @@ DEVICE_EXCLUDES = Q(device_type__slug="srx1500", name__contains="pfw3b")
 INVENTORY_MANUFACTURERS = ("juniper",)
 
 # Some minor hacks for inventory items (keyed by netbox 'vendor " " model')
-MODEL_EQUIVS_INVENTORY = {"juniper ex4300-48t": "juniper routing engine"}
+MODEL_EQUIVS_INVENTORY = {
+    "juniper ex4300-48t": "juniper routing engine",
+    "juniper qfx5100-48s-6q": "juniper qfx5100-48s-afi",
+}
 
 # See T331519
 MODEL_EQUIVS_DEVICES = {
@@ -112,8 +115,8 @@ class LibreNMSData:
                 """SELECT entPhysical_id as id,
                           lower(entPhysicalDescr) as description,
                           entPhysicalSerialNum as serial,
-                          lower(entPhysicalName) as model,
-                          lower(entPhysicalVendorType) as vendor
+                          lower(COALESCE(entPhysicalName, entPhysicalVendorType)) as model,
+                          lower(entPhysicalMfgName) as vendor
                    FROM entPhysical
                    WHERE entPhysicalSerialNum IS NOT NULL
                          AND entPhysicalSerialNum NOT IN ("", "BUILTIN");"""
@@ -127,6 +130,10 @@ class LibreNMSData:
                 # Some serials in inventory items have a S/N as their first token.
                 if inventory_item["serial"].startswith("S/N "):
                     inventory_item["serial"] = inventory_item["serial"].split(" ", 1)[1]
+
+                if inventory_item["vendor"] == "juniper networks":
+                    inventory_item["vendor"] = "juniper"
+
                 self.inventory[inventory_item["serial"]] = inventory_item
 
 
@@ -286,9 +293,9 @@ class LibreNMS(Report):
             elif device.serial in self.librenms.inventory:
                 # Values might be present in librenms but be None, convert them to strings
                 librenms_vendor_model_string = (
-                    self.librenms.inventory[device.serial].get("vendor") or ""
+                    (self.librenms.inventory[device.serial].get("vendor") or "")
                     + " "
-                    + self.librenms.inventory[device.serial].get("model") or ""
+                    + (self.librenms.inventory[device.serial].get("model") or "")
                 )
                 if (
                     nb_vendor_model_string in librenms_vendor_model_string
