@@ -206,17 +206,24 @@ class NetboxCluster(Netbox):
 
     def puppetdb_import(self) -> None:
         """Execute PuppetDB import on any host that have the placeholder PRIMARY interface."""
-        reimport = [
-            str(iface.virtual_machine)
+        vm_names = [
+            iface.virtual_machine.name
             for iface in self.api.virtualization.interfaces.filter(name="##PRIMARY##", cluster_id=self.cluster.id)
         ]
-        if not reimport:
+        if not vm_names:
             return
 
-        logger.info("Running PuppetDB import script for %d VMs.", len(reimport))
+        # Exclude VMs with tenants, they cannot be filtered in the previous API call
+        # Same check that customscripts/import_server_facts.py has in ImportPuppetDB._validate_device
+        vm_names = [
+            virtual_machine.name
+            for virtual_machine in self.api.virtualization.virtual_machines.filter(name=vm_names, tenant=None)
+        ]
+
+        logger.info("Running PuppetDB import script for %d VMs.", len(vm_names))
         url = f"{self.api.base_url}/extras/scripts/import_server_facts.ImportPuppetDB/"
         headers = {"Authorization": f"Token {self.api.token}"}
-        data = {"data": {"device": " ".join(reimport)}, "commit": not self.dry_run}
+        data = {"data": {"device": " ".join(vm_names)}, "commit": not self.dry_run}
         result = self.api.http_session.post(url, headers=headers, json=data)
         if result.status_code == 200:
             logger.debug("Executed import, result: %s", result.text)
