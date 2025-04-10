@@ -219,6 +219,8 @@ class NetboxCluster(Netbox):
             virtual_machine.name
             for virtual_machine in self.api.virtualization.virtual_machines.filter(name=vm_names, tenant=None)
         ]
+        if not vm_names:
+            return
 
         logger.info("Running PuppetDB import script for %d VMs.", len(vm_names))
         url = f"{self.api.base_url}/extras/scripts/import_server_facts.ImportPuppetDB/"
