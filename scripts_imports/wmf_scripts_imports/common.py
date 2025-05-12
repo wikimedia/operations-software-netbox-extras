@@ -797,12 +797,6 @@ class Importer:
             if child_interface.name not in networking["interfaces"]:
                 self.log_info(f"{device.name}: removing child interface no longer in puppet {child_interface.name}",
                               obj=device)
-                if child_interface.cable:
-                    self.log_info(f"Deleting cable {child_interface.cable} on interface {child_interface}")
-                    child_interface.cable.delete()
-                    # Required otherwise the interface.delete() fails
-                    # trying to update the now gone cable
-                    child_interface.refresh_from_db()
                 child_interface.delete()
 
         # Now process the remaining interfaces
@@ -818,13 +812,6 @@ class Importer:
                         or hasattr(device_interface, 'virtual_machine')):
                     self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}",
                                   obj=device)
-                    if device_interface.cable:
-                        self.log_info(f"Deleting cable {device_interface.cable} on interface {device_interface}")
-                        device_interface.cable.delete()
-                        # Required otherwise the interface.delete() fails
-                        # trying to update the now gone cable
-                        device_interface.refresh_from_db()
-
                     device_interface.delete()
                 else:
                     self.log_failure(f"{device.name}: We want to remove interface {device_interface.name}, however "

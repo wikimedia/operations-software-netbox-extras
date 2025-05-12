@@ -2,10 +2,13 @@
 
 import re
 
+from typing import Optional
+
 from dcim.choices import InterfaceTypeChoices
 from dcim.models import Interface
 from extras.validators import CustomValidator
 from ipam.models import VLAN
+from netbox.context import current_request
 from django.core.exceptions import ObjectDoesNotExist
 
 NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw")
@@ -60,7 +63,7 @@ class Main(CustomValidator):
                     f"to match {device_int.name} within the same block)", field="type"
                 )
 
-    def validate(self, instance, request):  # noqa: unused-argument
+    def validate(self, instance: Interface, request: Optional[current_request]) -> None:  # noqa: unused-argument
         """Mandatory entry point"""
         # Ignore all the non-network devices interfaces
         if instance.device.role.slug not in NETWORK_ROLES:
@@ -122,3 +125,7 @@ class Main(CustomValidator):
             and instance.device.device_type.slug in TRIDENT3_DEVICES
         ):
             self._check_trident3_port(instance)
+
+        # child interfaces must be virtual
+        if instance.parent and (instance.type not in VIRTUAL_TYPES):
+            self.fail(f"Child interfaces must be one of those types: {VIRTUAL_TYPES}.", field="type")
