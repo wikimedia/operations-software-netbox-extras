@@ -48,10 +48,7 @@ INVENTORY_ROLES_EXCLUDES = ("license",)
 
 # These are very specific filters for devices that act incorrectly in LibreNMS. We should document them
 # here as well.
-#
-# srx1500 with name pf3b does not report its serials in a way consistent with other similar devices.
-#
-DEVICE_EXCLUDES = Q(device_type__slug="srx1500", name__contains="pfw3b")
+DEVICE_EXCLUDES = Q()
 
 # The slugs for manufacturers that may also match with inventory items by serial
 INVENTORY_MANUFACTURERS = ("juniper",)
@@ -68,6 +65,7 @@ MODEL_EQUIVS_DEVICES = {
     "qfx5120-48y-afi2": "jnp48y8c-chas",
     "qfx5120-32c-afi": "qfx5120-32c",
     "qfx5120-32c-afi2": "qfx5120-32c",
+    "ex4400-48t-afi": "ex4400-48t",
 }
 
 
