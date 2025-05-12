@@ -694,11 +694,12 @@ class Importer:
         int_names = int_names + [name for name in interfaces.keys() if name not in int_names]
         return int_names
 
-    def _import_interfaces_for_device(self, device, net_driver, networking, lldp, is_vm=False) -> list:
+    def _import_interfaces_for_device(self, device: Device, net_driver: dict,
+                                      networking: dict, lldp: dict, is_vm: bool = False) -> list:
         # TODO: docstring
         # Resolve one device's interfaces and ip addresses based on a net_driver, networking and lldp dictionary
         # as would be obtained from PuppetDB under those key names.
-        output = []
+        output: list = []
 
         for device_interface in device.interfaces.all():
             # Clean up potential ##PRIMARY## interfaces
@@ -796,6 +797,12 @@ class Importer:
             if child_interface.name not in networking["interfaces"]:
                 self.log_info(f"{device.name}: removing child interface no longer in puppet {child_interface.name}",
                               obj=device)
+                if child_interface.cable:
+                    self.log_info(f"Deleting cable {child_interface.cable} on interface {child_interface}")
+                    child_interface.cable.delete()
+                    # Required otherwise the interface.delete() fails
+                    # trying to update the now gone cable
+                    child_interface.refresh_from_db()
                 child_interface.delete()
 
         # Now process the remaining interfaces
@@ -811,6 +818,13 @@ class Importer:
                         or hasattr(device_interface, 'virtual_machine')):
                     self.log_info(f"{device.name}: removing interface no longer in puppet {device_interface.name}",
                                   obj=device)
+                    if device_interface.cable:
+                        self.log_info(f"Deleting cable {device_interface.cable} on interface {device_interface}")
+                        device_interface.cable.delete()
+                        # Required otherwise the interface.delete() fails
+                        # trying to update the now gone cable
+                        device_interface.refresh_from_db()
+
                     device_interface.delete()
                 else:
                     self.log_failure(f"{device.name}: We want to remove interface {device_interface.name}, however "

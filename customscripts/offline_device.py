@@ -35,7 +35,7 @@ class OfflineDevice(Script):
         for device in devices:
             self._run_device(device)
 
-    def _run_device(self, device):
+    def _run_device(self, device: Device) -> None:
         """Run the script for one device."""
         if device.status != "decommissioning":
             self.log_failure(
@@ -65,6 +65,12 @@ class OfflineDevice(Script):
                 )
                 address.delete()
 
+            if interface.cable:
+                self.log_info(f"Deleting cable {interface.cable} on device {device}")
+                interface.cable.delete()
+                # Required otherwise the interface.delete() fails
+                # trying to update the now gone cable
+                interface.refresh_from_db()
             self.log_info(f"Deleting interface {interface} on device {device}")
             interface.delete()
 
