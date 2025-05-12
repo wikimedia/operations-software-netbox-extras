@@ -10,6 +10,8 @@ from django.contrib.contenttypes.models import ContentType
 
 from dcim.choices import DeviceStatusChoices
 from dcim.models import (
+    Cable,
+    CableTermination,
     ConsolePort,
     ConsoleServerPort,
     Interface,
@@ -33,7 +35,7 @@ class Cables(Report):
 
     description = __doc__
 
-    def _port_names_test(self, queryset, regex, label):
+    def _port_names_test(self, queryset: CableTermination, regex: re.Pattern, label: str) -> None:
         """Check that Cables and CableTermination have proper name.
 
         Test and report each item in the query set (presumed to be a CableTermination) for its name matching the
@@ -69,7 +71,7 @@ class Cables(Report):
             None, f"{successes} correctly named {label} cable terminations"
         )
 
-    def test_console_port_termination_names(self):
+    def test_console_port_termination_names(self) -> None:
         """Proxy to _port_names_test with values for checking console ports."""
         self._port_names_test(
             ConsolePort.objects.exclude(device__status__in=EXCLUDE_STATUSES),
@@ -77,7 +79,7 @@ class Cables(Report):
             "console port",
         )
 
-    def test_console_server_port_termination_names(self):
+    def test_console_server_port_termination_names(self) -> None:
         """Proxy to _port_names_test with values for checking console server ports."""
         self._port_names_test(
             ConsoleServerPort.objects.exclude(device__status__in=EXCLUDE_STATUSES),
@@ -85,10 +87,20 @@ class Cables(Report):
             "console server port",
         )
 
-    def test_power_port_termination_names(self):
+    def test_power_port_termination_names(self) -> None:
         """Proxy to _port_names_test with values for checking power ports."""
         self._port_names_test(
             PowerPort.objects.exclude(device__status__in=EXCLUDE_STATUSES),
             re.compile(r"PSU\d|PEM \d|Power Supply \d"),
             "power port",
         )
+
+    def test_unterminated_cable(self) -> None:
+        """All the cables should be connected on both sides."""
+        successes = 0
+        for cable in Cable.objects.all():
+            if not cable.a_terminations or not cable.b_terminations:
+                self.log_failure(cable, "Unterminated cable, should be connected on both sides.")
+            else:
+                successes += 1
+        self.log_success(None, f"{successes} cables correctly connected.")
