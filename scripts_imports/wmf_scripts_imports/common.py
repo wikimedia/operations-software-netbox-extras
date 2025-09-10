@@ -19,7 +19,7 @@ from virtualization.models import VMInterface, VirtualMachine
 SWITCH_INTERFACES_PREFIX_ALLOWLIST = ("et-",
                                       "xe-",
                                       "ge-",
-                                      "Ethernet")
+                                      "ethernet-")
 
 CONFIGFILE = "/etc/netbox/reports.cfg"
 
@@ -87,10 +87,10 @@ def port_to_iface(port: int, nbdevice: Device, interface_type: str) -> str:
             return f"{prefix}{str(nbdevice.vc_position)}/0/{str(port)}"
         return f"{prefix}0/0/{str(port)}"
 
-    if nbdevice.device_type.manufacturer.slug == 'dell':
-        return f"Ethernet{str(port - 1)}"
+    if nbdevice.device_type.manufacturer.slug == 'nokia':
+        return f"ethernet-1/{str(port)}"
 
-    raise AbortScript("Unsupported switch vendor (must be Dell or Juniper)")
+    raise AbortScript("Unsupported switch vendor (must be Nokia or Juniper)")
 
 
 def duplicate_cable_id(cable_id: int, site: Site) -> bool:
@@ -135,7 +135,7 @@ class Importer:
     """Shared functionality for interface and IP address importers."""
 
     @staticmethod
-    def _get_ipv6_prefix_length(ipv6mask):
+    def _get_ipv6_prefix_length(ipv6mask: str) -> int:
         """Convert an old-style IPv6 netmask into a prefix length in bits.
 
         This is provided because the ipaddress library does not support this (deprecated) method
