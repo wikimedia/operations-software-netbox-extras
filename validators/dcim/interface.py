@@ -29,12 +29,27 @@ INTERFACES_REGEXP = re.compile(
     )
 )
 
-TRIDENT3_DEVICES = ("qfx5120-48y-afi", "qfx5120-48y-afi2", "powerswitch-s5248f-on")
+TRIDENT3_TOR = ("qfx5120-48y-afi", "qfx5120-48y-afi2", "7220-ixr-d2l")
 VIRTUAL_TYPES = (
     InterfaceTypeChoices.TYPE_VIRTUAL,
     InterfaceTypeChoices.TYPE_BRIDGE,
     InterfaceTypeChoices.TYPE_LAG,
 )
+
+NOKIA_PORT_BLOCKS = [
+    (1, 2, 3, 6),
+    (4, 5, 7, 9),
+    (8, 10, 11, 12),
+    (13, 14, 15, 18),
+    (16, 17, 19, 21),
+    (20, 22, 23, 24),
+    (25, 26, 27, 30),
+    (28, 29, 31, 33),
+    (32, 34, 35, 36),
+    (37, 38, 39, 42),
+    (40, 41, 43, 45),
+    (44, 46, 47, 48)
+]
 
 
 class Main(CustomValidator):
@@ -43,25 +58,44 @@ class Main(CustomValidator):
     def _check_trident3_port(self, instance: Interface) -> None:
         """Checks that the port speed is consistent with others in block due to Trident 3 constraint"""
         logical_port = int(instance.name.replace("Ethernet", "").split("/")[-1])
-        block_start = logical_port - (logical_port % 4)
-        block_ports = range(block_start, block_start + 4)
-        device_ints = Interface.objects.filter(
-            device_id=instance.device.id, enabled=True, mgmt_only=False
-        ).exclude(type__in=VIRTUAL_TYPES).exclude(id=instance.id)
-        # The exclude "id=instance.id" is to prvent an error between an interface and itself
-        # For example when changing the type of an interface
-        for device_int in device_ints:
-            # Get logical port number from interface name
-            try:
-                port_num = int(device_int.name.replace("Ethernet", "").split("/")[-1])
-            except ValueError:
-                # Don't block the user if there is an improperly named interface on the switch
-                continue
-            if port_num <= 47 and port_num in block_ports and device_int.type != instance.type:
-                self.fail(
-                    f"Invalid type/speed '{instance.type}' (must be {device_int.type} "
-                    f"to match {device_int.name} within the same block)", field="type"
-                )
+        if instance.device.device_type.manufacturer.slug == "juniper":
+            # Regular port-block layout 0-3, 4-7, 8-11 etc.
+            block_start = logical_port - (logical_port % 4)
+            block_ports = range(block_start, block_start + 4)
+            device_ints = Interface.objects.filter(
+                device_id=instance.device.id, enabled=True, mgmt_only=False
+            ).exclude(type__in=VIRTUAL_TYPES).exclude(id=instance.id)
+            # The exclude "id=instance.id" is to prvent an error between an interface and itself
+            # For example when changing the type of an interface
+            for device_int in device_ints:
+                # Get logical port number from interface name
+                try:
+                    port_num = int(device_int.name.replace("Ethernet", "").split("/")[-1])
+                except ValueError:
+                    # Don't block the user if there is an improperly named interface on the switch
+                    continue
+                if port_num <= 47 and port_num in block_ports and device_int.type != instance.type:
+                    self.fail(
+                        f"Invalid type/speed '{instance.type}' (must be {device_int.type} "
+                        f"to match {device_int.name} within the same block)", field="type"
+                    )
+        elif instance.device.device_type.manufacturer.slug == "nokia":
+            # Wonky Nokia port-block layout
+            teng_compat = ['1000base-x-sfp', '10gbase-x-sfpp']
+            compatible_types = teng_compat if instance.type in teng_compat else [instance.type]
+            for port_block in NOKIA_PORT_BLOCKS:
+                if logical_port in port_block:
+                    block_int_names = [f"ethernet-1/{port}" for port in port_block if port != logical_port]
+                    block_ints = Interface.objects.filter(
+                        device_id=instance.device.id, enabled=True, name__in=block_int_names
+                    )
+                    for block_int in block_ints:
+                        if block_int.type not in compatible_types:
+                            self.fail(
+                                f"Type/speed '{instance.type}' is incompatible with {block_int.name} "
+                                f"('{block_int.type}') in the same block of four", field="type"
+                            )
+                    break
 
     def validate(self, instance: Interface, request: Optional[current_request]) -> None:  # noqa: unused-argument
         """Mandatory entry point"""
@@ -122,7 +156,7 @@ class Main(CustomValidator):
         if (
             instance.type not in VIRTUAL_TYPES
             and not instance.mgmt_only
-            and instance.device.device_type.slug in TRIDENT3_DEVICES
+            and instance.device.device_type.slug in TRIDENT3_TOR
         ):
             self._check_trident3_port(instance)
 

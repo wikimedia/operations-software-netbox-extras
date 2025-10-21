@@ -875,7 +875,17 @@ class Importer:
             z_nbiface = self._create_z_nbiface(z_nbdevice, z_iface, 9192, iface_fmt)
             z_nbiface.save()
 
-        # Then configure it - operations need to be in this order, and iface saved before tagged vlans added
+        # Update the interface type/speed if it doesn't match
+        if iface_fmt and z_nbiface.type != iface_fmt:
+            z_nbiface.type = iface_fmt
+            # Run interface validator to ensure port-block consistency
+            try:
+                z_nbiface.full_clean()
+            except ValidationError as e:
+                raise AbortScript(f"{z_nbdevice}: iface {z_iface} fails validation checks - {e.messages[0]}.") from e
+            self.log_success(f"{z_nbiface.device}:{z_nbiface} changed type to {iface_fmt}")
+
+        # Vlan configuration - operations need to be in this order, and iface saved before tagged vlans added
         z_nbiface.mode = 'access'
         z_nbiface.mtu = 9192
         z_nbiface.untagged_vlan = vlan

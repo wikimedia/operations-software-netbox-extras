@@ -290,7 +290,7 @@ class ProvisionServerNetwork(Script, Importer):
             if not z_iface:
                 self.log_failure(f"{z_nbdevice}: invalid port/type/device combination.")
                 return
-            z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, vlan)
+            z_nbiface = self._update_z_nbiface(z_nbdevice, z_iface, vlan, interface_type)
 
             # And now the cable between the two
             # If the switch port already have a cable, we don't try to delete it
