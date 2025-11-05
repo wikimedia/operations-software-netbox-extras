@@ -2,8 +2,8 @@ import re
 
 from wmf_scripts_imports.common import Importer, format_logs, SWITCH_INTERFACES_PREFIX_ALLOWLIST
 
-from dcim.models import Device
-from extras.scripts import ChoiceVar, ObjectVar, Script, StringVar
+from dcim.models import Device, Site
+from extras.scripts import ChoiceVar, ObjectVar, MultiObjectVar, Script, StringVar
 from utilities.exceptions import AbortScript
 
 
@@ -159,32 +159,37 @@ class MoveServersUplinks(Script, Importer):
                                             tenant__isnull=True,
                                             rack=new_switch.rack)
 
-        server_count = 0
         for server in all_servers:
-            server_count += 1
-            interface = self.find_primary_interface(server)
-            if not interface:
-                continue
-            z_old_nbiface = self.find_remote_interface(interface)
-            # Don't do anything if server is already connected to the 'new' switch
-            if z_old_nbiface.device == new_switch:
-                self.log_info(f"{server.name} already connected to {new_switch}, skipping.")
-                continue
-            # Only works with Juniper
-            z_iface = f"{z_old_nbiface.name.split('-')[0]}-0/0/{int(server.position) - 1}"
+            self.move_server_uplink(server, new_switch)
 
-            # Configure the new switch interface
-            z_nbiface = self._update_z_nbiface(new_switch, z_iface, z_old_nbiface.untagged_vlan, z_old_nbiface.type,
-                                               [vlan.id for vlan in z_old_nbiface.tagged_vlans.all()])
 
-            # Clean the old one
-            self.clean_interface(z_old_nbiface)
-            label = str(interface.cable.label)
-            # Remove the old cable
-            interface.cable.delete()
-            # After deleting the cable refresh the interface, otherwise
-            # interface.cable still returns the old cable
-            interface.refresh_from_db()
-            # Create the new one
-            self._create_cable(interface, z_nbiface, label=label)
-            self.log_success(f"{server} ({server_count}/{len(all_servers)}): All done.")
+class MoveSpecificUplinks(Script, Importer):
+    class Meta:
+        name = "Move specific servers' uplinks from old to new ToR"
+        description = "Assumes same port numbers can be used, accounting for vendor numbers starting at 0 or 1"
+        commit_default = False  # noqa: unused-variable
+        scheduling_enabled = False
+
+    site = ObjectVar(
+        model=Site
+    )
+
+    servers = MultiObjectVar(
+        model=Device,
+        query_params={
+            'site_id': '$site',
+            'status': 'active',
+            'role': 'server'
+        }
+    )
+
+    def run(self, data, commit):  # noqa: unused-argument
+        """Run the script and return all the log messages."""
+        self.log_info(f"Called with parameters: {data}")
+        self.move_server_uplinks(data)
+        return format_logs(self.messages)
+
+    def move_server_uplinks(self, data):
+        """Move the connetions for all selected servers from old to new switch"""
+        for server in data['servers']:
+            self.move_server_uplink(server)

@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 import ipaddress
 import re
 
@@ -837,21 +838,24 @@ class Importer:
 
         return True
 
-    def _create_cable(self, nbiface, z_nbiface, label=''):
+    def _create_cable(self, nbiface, z_nbiface, label='', color='', cable_type=''):
         """Create a cable between two interfaces."""
-        color = ''
-        cable_type = ''
-        color_human = ''
-        # Most of our infra are either blue 1G copper, or black 10G DAC.
-        # Exceptions are yellow fibers for longer distances like LVS, or special sites like ulsfo
-        if nbiface.type == InterfaceTypeChoices.TYPE_1GE_FIXED:
-            color = ColorChoices.COLOR_BLUE
+        # Set color based on link type if not passed
+        if not color:
+            if InterfaceTypeChoices.TYPE_1GE_FIXED:
+                color = ColorChoices.COLOR_BLUE
+            if nbiface.type in (InterfaceTypeChoices.TYPE_10GE_SFP_PLUS, InterfaceTypeChoices.TYPE_25GE_SFP28):
+                color = ColorChoices.COLOR_BLACK
             color_human = dict(ColorChoices)[color]
-            cable_type = CableTypeChoices.TYPE_CAT5E
-        elif nbiface.type in (InterfaceTypeChoices.TYPE_10GE_SFP_PLUS, InterfaceTypeChoices.TYPE_25GE_SFP28):
-            color = ColorChoices.COLOR_BLACK
-            color_human = dict(ColorChoices)[color]
-            cable_type = CableTypeChoices.TYPE_DAC_PASSIVE
+            self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}",
+                             obj=nbiface)
+
+        # Set cable type based on interface type
+        if not cable_type:
+            if InterfaceTypeChoices.TYPE_1GE_FIXED:
+                cable_type = CableTypeChoices.TYPE_CAT5E
+            if nbiface.type in (InterfaceTypeChoices.TYPE_10GE_SFP_PLUS, InterfaceTypeChoices.TYPE_25GE_SFP28):
+                cable_type = CableTypeChoices.TYPE_DAC_PASSIVE
 
         cable = Cable(a_terminations=[nbiface],
                       b_terminations=[z_nbiface],
@@ -861,7 +865,6 @@ class Importer:
                       status=LinkStatusChoices.STATUS_CONNECTED)
         cable.save()
         self.log_success(f"{nbiface.device}: created cable {cable}", obj=cable)
-        self.log_warning(f"{nbiface.device}: assuming {color_human} {cable_type} because {nbiface.type}", obj=nbiface)
 
     def _update_z_nbiface(self, z_nbdevice, z_iface, vlan, iface_fmt=None, tagged_vlans=None) -> Interface:
         """Create switch interface if needed and set vlan info."""
@@ -919,6 +922,9 @@ class Importer:
         interface.untagged_vlan = None
         interface.mtu = None
         interface.tagged_vlans.set([])
+        # Default type to SFP28 on Nokia where naming is consistent
+        if interface.device.device_type.slug == "7220-ixr-d2l" and int(interface.name.split("/")[-1]) < 49:
+            interface.type = InterfaceTypeChoices.TYPE_25GE_SFP28
         interface.save()
 
     def find_remote_interface(self, interface: Interface) -> Optional[Interface]:
@@ -929,4 +935,74 @@ class Importer:
         for termination in cable.terminations.all():
             if termination.termination != interface and isinstance(termination.termination, Interface):
                 return termination.termination
+        return None
+
+    def get_switch_port_id(self, nbiface: Interface):
+        """Returns the port ID, i.e. 0, 2, 3, from a full switch interface name"""
+        return int(nbiface.name.split("/")[-1])
+
+    def move_server_uplink(self, server: Device, new_switch: Optional[Device] = None):
+        """Moves a server's swtich connection from old to new switch in a rack."""
+        interface = self.find_primary_interface(server)
+        if not interface:
+            self.log_failure(f"{server}: cannot find primary interface, skipping.")
+            return None
+
+        old_sw_nbiface = self.find_remote_interface(interface)
+        if not old_sw_nbiface:
+            self.log_failure(f"{server}: could not find connected switch port for {interface}")
+            return None
+        old_switch = old_sw_nbiface.device
+
+        # Get the other switch in the rack if it's not been passed
+        if not new_switch:
+            rack_switches = Device.objects.filter(rack=old_switch.rack, role=4,
+                                                  status='active').exclude(id=old_switch.id)
+            if not rack_switches or len(rack_switches) > 1:
+                self.log_failure(f"{server}: rack {server.rack} has {len(rack_switches)} other switches, skipping.")
+                return None
+            new_switch = rack_switches[0]
+        elif old_switch == new_switch:
+            self.log_info(f"{server.name} already connected to {new_switch}, skipping.")
+            return None
+
+        # New interface name
+        new_iface_name = old_sw_nbiface.name
+        if (
+            old_switch.device_type.manufacturer.slug == "juniper"
+            and new_switch.device_type.manufacturer.slug == "nokia"
+        ):
+            new_iface_name = f"ethernet-1/{self.get_switch_port_id(old_sw_nbiface) + 1}"
+        elif (
+            old_switch.device_type.manufacturer.slug == "nokia"
+            and new_switch.device_type.manufacturer.slug == "juniper"
+        ):
+            int_prefix = "et"
+            if old_sw_nbiface.type == InterfaceTypeChoices.TYPE_10GE_SFP_PLUS:
+                int_prefix = "xe"
+            elif old_sw_nbiface.type == InterfaceTypeChoices.TYPE_1GE_FIXED:
+                int_prefix = "ge"
+            fpc = new_switch.vc_position if new_switch.virtual_chassis else 0
+            new_iface_name = f"{int_prefix}-{fpc}/0/{self.get_switch_port_id(old_sw_nbiface) - 1}"
+
+        # Configure the new switch interface
+        new_sw_nbiface = self._update_z_nbiface(new_switch, new_iface_name,
+                                                old_sw_nbiface.untagged_vlan, old_sw_nbiface.type,
+                                                [vlan.id for vlan in old_sw_nbiface.tagged_vlans.all()])
+        # Default and disable the old switch interface
+        self.clean_interface(old_sw_nbiface)
+
+        # Record existing cable details then delete cable
+        cable_label = interface.cable.label
+        cable_color = interface.cable.color
+        cable_type = interface.cable.type
+        interface.cable.delete()
+        # After deleting the cable refresh server interface, otherwise
+        # interface.cable still returns the old cable
+        interface.refresh_from_db()
+        # Create a new cable with the same label
+        self._create_cable(interface, new_sw_nbiface, label=cable_label, color=cable_color, cable_type=cable_type)
+        self.log_success(f"{server}: moved connection from {old_switch.name} {old_sw_nbiface} "
+                         f"to {new_switch.name} {new_sw_nbiface}.")
+
         return None

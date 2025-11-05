@@ -55,12 +55,18 @@ NOKIA_PORT_BLOCKS = [
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
 
+    def _type_to_speed(self, interface_type: str) -> int:
+        """Returns interface speed in gbps based on iface.type slug"""
+        if "gbase" in interface_type:
+            return int(interface_type.split("gbase")[0])
+        return int(interface_type.split("base")[0]) / 1000
+
     def _check_trident3_port(self, instance: Interface) -> None:
         """Checks that the port speed is consistent with others in block due to Trident 3 constraint"""
-        logical_port = int(instance.name.replace("Ethernet", "").split("/")[-1])
+        port_number = int(instance.name.split("/")[-1])
         if instance.device.device_type.manufacturer.slug == "juniper":
             # Regular port-block layout 0-3, 4-7, 8-11 etc.
-            block_start = logical_port - (logical_port % 4)
+            block_start = port_number - (port_number % 4)
             block_ports = range(block_start, block_start + 4)
             device_ints = Interface.objects.filter(
                 device_id=instance.device.id, enabled=True, mgmt_only=False
@@ -74,23 +80,26 @@ class Main(CustomValidator):
                 except ValueError:
                     # Don't block the user if there is an improperly named interface on the switch
                     continue
-                if port_num <= 47 and port_num in block_ports and device_int.type != instance.type:
+                instance_speed = self._type_to_speed(instance.type)
+                device_int_speed = self._type_to_speed(device_int.type)
+                if port_num <= 47 and port_num in block_ports and device_int_speed != instance_speed:
                     self.fail(
                         f"Invalid type/speed '{instance.type}' (must be {device_int.type} "
                         f"to match {device_int.name} within the same block)", field="type"
                     )
         elif instance.device.device_type.manufacturer.slug == "nokia":
             # Wonky Nokia port-block layout
-            teng_compat = ['1000base-x-sfp', '10gbase-x-sfpp']
-            compatible_types = teng_compat if instance.type in teng_compat else [instance.type]
-            for port_block in NOKIA_PORT_BLOCKS:
-                if logical_port in port_block:
-                    block_int_names = [f"ethernet-1/{port}" for port in port_block if port != logical_port]
+            teng_compat = [1, 10]
+            instance_speed = self._type_to_speed(instance.type)
+            compatible_speeds = teng_compat if instance_speed in teng_compat else [instance_speed]
+            for block in NOKIA_PORT_BLOCKS:
+                if port_number in block:
+                    block_int_names = [f"ethernet-1/{port}" for port in block if port != port_number]
                     block_ints = Interface.objects.filter(
                         device_id=instance.device.id, enabled=True, name__in=block_int_names
                     )
                     for block_int in block_ints:
-                        if block_int.type not in compatible_types:
+                        if self._type_to_speed(block_int.type) not in compatible_speeds:
                             self.fail(
                                 f"Type/speed '{instance.type}' is incompatible with {block_int.name} "
                                 f"('{block_int.type}') in the same block of four", field="type"
