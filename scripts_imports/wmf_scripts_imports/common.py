@@ -956,8 +956,12 @@ class Importer:
 
         # Get the other switch in the rack if it's not been passed
         if not new_switch:
-            rack_switches = Device.objects.filter(rack=old_switch.rack, role=4,
-                                                  status='active').exclude(id=old_switch.id)
+            rack_switches = (
+                Device.objects
+                .filter(rack=old_switch.rack, role=4, status='active')
+                .exclude(id=old_switch.id)
+                .exclude(name__startswith='ssw')
+            )
             if not rack_switches or len(rack_switches) > 1:
                 self.log_failure(f"{server}: rack {server.rack} has {len(rack_switches)} other switches, skipping.")
                 return None
