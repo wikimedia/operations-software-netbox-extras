@@ -75,7 +75,7 @@ class Cables(Report):
         """Proxy to _port_names_test with values for checking console ports."""
         self._port_names_test(
             ConsolePort.objects.exclude(device__status__in=EXCLUDE_STATUSES),
-            re.compile(r"console\d|console-re\d|serial\d"),
+            re.compile(r"console\d|console-re\d|serial\d|Console"),
             "console port",
         )
 
@@ -91,7 +91,7 @@ class Cables(Report):
         """Proxy to _port_names_test with values for checking power ports."""
         self._port_names_test(
             PowerPort.objects.exclude(device__status__in=EXCLUDE_STATUSES),
-            re.compile(r"PSU\d|PEM \d|Power Supply \d"),
+            re.compile(r"PSU\d|PEM \d|Power Supply \d|PS\d"),
             "power port",
         )
 
