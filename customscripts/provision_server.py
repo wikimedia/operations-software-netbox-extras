@@ -45,7 +45,6 @@ SKIP_V6_DNS_PREFIXES = (
     "dbproxy",
     "dbstore",
     "es",
-    "maps",
     "pc",
     "restbase",
 )
