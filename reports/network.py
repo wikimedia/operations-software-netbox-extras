@@ -29,16 +29,9 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "an-redacteddb",
     "clouddb",
     "db",
-    "dbprov",
     "dbproxy",
     "dbstore",
     "es",
-    "ganeti",
-    "maps",
-    "ms-be",
-    "pc",
-    "restbase",
-    "thanos-fe",
 )
 
 
