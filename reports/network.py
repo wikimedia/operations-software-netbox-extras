@@ -32,6 +32,7 @@ NO_V6_DEVICE_NAME_PREFIXES = (
     "dbproxy",
     "dbstore",
     "es",
+    "pc",
 )
 
 
@@ -138,7 +139,7 @@ class Network(Report):
                     self.log_failure(device, "Primary IPv6 missing DNS name")
                     continue
             success += 1
-        self.log_success(None, f"{success} devices with operationnal primary IPv6")
+        self.log_success(None, f"{success} devices with operational primary IPv6")
 
     def test_duplicate_ip_netmask(self):
         """Report to check for duplicate IPs with different netmasks.
