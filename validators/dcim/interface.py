@@ -173,14 +173,14 @@ class Main(CustomValidator):
         if instance.parent and (instance.type not in VIRTUAL_TYPES):
             self.fail(f"Child interfaces must be one of those types: {VIRTUAL_TYPES}.", field="type")
 
-        # Acces switches physical port number are from 0 to 47 on Juniper, and 1 to 48 on Nokia
+        # Access switches physical port number are from 0 to 55 on Juniper, and 1 to 58 on Nokia
         if instance.type not in VIRTUAL_TYPES and not instance.mgmt_only and instance.device.role.slug == "asw":
             physical_port = int(instance.name.split("/")[-1])
             vendor = instance.device.device_type.manufacturer.slug
-            if vendor == 'juniper' and physical_port > 47:
-                self.fail(f"Port {physical_port} is outside of Juniper port range (0-47)", field="name")
-            if vendor == 'nokia' and (physical_port < 1 or physical_port > 48):
-                self.fail(f"Port {physical_port} is outside of Nokia port range (0-47)", field="name")
+            if vendor == 'juniper' and physical_port > 55:
+                self.fail(f"Port {physical_port} is outside of Juniper port range (0-55)", field="name")
+            if vendor == 'nokia' and (physical_port < 1 or physical_port > 58):
+                self.fail(f"Port {physical_port} is outside of Nokia port range (0-58)", field="name")
 
         # Catch someone using a Juniper interface naming on Nokia and the other way around
         # Not all the possibilities, but the most probable ones
