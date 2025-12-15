@@ -10,7 +10,12 @@ from dcim.models import Interface
 from ipam.models import IPAddress
 from virtualization.models import VMInterface
 
-from extras.scripts import Script
+from core.models import Job
+from extras.scripts import Script, ScriptModel
+from utilities.exceptions import AbortScript
+
+# Present in Netbox requirements.txt
+from dulwich.patch import unified_diff
 
 
 class GetHosts(Script):
@@ -19,13 +24,14 @@ class GetHosts(Script):
         description = "Returns all the Netbox hosts IPs, Anycast IPs and VIPs in a Capirca NETWORKS.net format."
         job_timeout = 900  # noqa: unused-variable
         scheduling_enabled = False  # noqa: unused-variable
+        commit_default = False  # noqa: unused-variable
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.interface_ct = ContentType.objects.get_for_model(Interface)
         self.vm_ct = ContentType.objects.get_for_model(VMInterface)
 
-    def process_ipaddress(self, ipaddress):
+    def process_ipaddress(self, ipaddress: IPAddress) -> tuple:
         # Several types of IPs:
         # 1. the interface IPs (device or VM)
         # 2. the VIPs
@@ -51,7 +57,7 @@ class GetHosts(Script):
 
         return hostname, ipaddress.address.ip
 
-    def generate_output(self, singles, groups):
+    def generate_output(self, singles: dict, groups: dict) -> str:
         output = StringIO()
         # Keep decent indentation (for nothing as Netbox strips empty characters)
         for name, networks in sorted(singles.items()):
@@ -70,7 +76,7 @@ class GetHosts(Script):
 
         return output.getvalue()
 
-    def run(self, data, commit):  # noqa: unused-argument
+    def run(self, data: dict, commit: bool) -> str:  # noqa: unused-argument
         hosts = defaultdict(set)
         groups = defaultdict(set)
 
@@ -91,4 +97,26 @@ class GetHosts(Script):
             if sub_count:
                 groups[group].add(hostname)
 
-        return self.generate_output(hosts, groups)
+        output = self.generate_output(hosts, groups)
+        if commit:
+            return output
+
+        # Find most recent run, workaround to find our own script ID
+        script = ScriptModel.objects.get(name=self.class_name)
+        script_id = script.result.object_id  # script.result is the current run with the "Running" status
+        # if the last run is not successful, we try to find the latest successful
+        last_run = Job.objects.filter(object_id=script_id, status="completed").order_by('-created').first()
+        # There is no previous successful run on record, save it now
+        if not last_run:
+            return output
+
+        previous_output = last_run.data['output'].encode('utf-8')
+        differences = unified_diff(previous_output.splitlines(keepends=True),
+                                   output.encode('utf-8').splitlines(keepends=True),
+                                   fromfile=b'original', tofile=b'modified', n=1)
+        diff_output = b''.join(differences).decode('utf-8')
+        self.log_info(diff_output.replace('\n', '<br>'))
+        if diff_output:
+            raise AbortScript("See outstanding diff above, commit if correct.")
+
+        return output
