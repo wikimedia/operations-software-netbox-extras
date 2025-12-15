@@ -26,6 +26,7 @@ class ProvisionFundraisingServerNetwork(Script, Importer):
         name = "Fundraising Server Provision for Dual-Switch Uplinks"
         description = "More exactly: IPs, interfaces (including mgmt and switch), vlan."
         commit_default = False
+        scheduling_enabled = False  # noqa: unused-variable
 
     device = ObjectVar(
         description=("Inventory or planned server."),

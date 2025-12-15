@@ -13,6 +13,7 @@ class ReplaceDevice(Script):
             "Note that existing attributes on the new device will be deleted."
         )
         commit_default = False
+        scheduling_enabled = False  # noqa: unused-variable
 
     source_device = ObjectVar(
         required=True,

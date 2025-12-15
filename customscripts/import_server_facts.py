@@ -16,6 +16,7 @@ class ImportPuppetDB(Script, Importer):
         name = "Import Interfaces, IPAddresses, Cables and switch ports from PuppetDB"
         description = "Access PuppetDB and resolve interface and IP address differences."
         commit_default = False  # noqa: unused-variable
+        scheduling_enabled = False  # noqa: unused-variable
 
     device = StringVar(description="The device name(s) to import interface(s) for (space separated)",
                        label="Devices")

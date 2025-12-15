@@ -18,6 +18,7 @@ class GetHosts(Script):
         name = "Capirca hosts definitions"
         description = "Returns all the Netbox hosts IPs, Anycast IPs and VIPs in a Capirca NETWORKS.net format."
         job_timeout = 900  # noqa: unused-variable
+        scheduling_enabled = False  # noqa: unused-variable
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

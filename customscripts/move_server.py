@@ -12,6 +12,7 @@ class MoveServer(Script, Importer):
         name = "Move a server within the same row"
         description = "More exactly: keep the same vlan and IP."
         commit_default = False  # noqa: unused-variable
+        scheduling_enabled = False  # noqa: unused-variable
 
     device = ObjectVar(
         required=True,
@@ -131,6 +132,7 @@ class MoveServersUplinks(Script, Importer):
         name = "Move all the servers' uplinks from old to new ToR."
         description = "Assigns port number based on the rack U number of the server."
         commit_default = False  # noqa: unused-variable
+        scheduling_enabled = False  # noqa: unused-variable
 
     new_switch = ObjectVar(
         required=True,

@@ -12,6 +12,7 @@ class OfflineDevice(Script):
             "and related IP addresses."
         )
         commit_default = False  # noqa: unused-variable
+        scheduling_enabled = False  # noqa: unused-variable
 
     devices = StringVar(
         label="Device name(s)",

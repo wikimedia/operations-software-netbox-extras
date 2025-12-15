@@ -56,6 +56,7 @@ class ProvisionServerNetworkCSV(Script):
         name = "Provision multiple servers network attributes from a CSV"
         description = "More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan."
         commit_default = False
+        scheduling_enabled = False  # noqa: unused-variable
 
     csv_file = FileVar(
         required=True,
@@ -120,6 +121,7 @@ class ProvisionServerNetwork(Script, Importer):
         name = "Provision a server's network attributes"
         description = "More exactly: IPs, interfaces (including mgmt and switch), primary cable, vlan."
         commit_default = False
+        scheduling_enabled = False  # noqa: unused-variable
 
     device = ObjectVar(
         required=True,

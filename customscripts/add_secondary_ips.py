@@ -12,6 +12,7 @@ class AddSecondaryIPs(Script, Importer):
         name = "Assign additional IPv4 addresses to host"
         description = "Assign's additional IPv4 addresses to a host's primary int (principally for Cassandra instances)"
         commit_default = True  # noqa: unused-variable
+        scheduling_enabled = False  # noqa: unused-variable
 
     device = ObjectVar(
         description=("Server. (Required)"),

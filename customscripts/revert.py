@@ -18,6 +18,7 @@ class Revert(Script):
         description = ("(experimental) TRY to revert a single request ID or multiple change IDs. "
                        "Only supports create and delete actions. Make sure to use dry-run first.")
         commit_default = False  # noqa: unused-variable
+        scheduling_enabled = False  # noqa: unused-variable
 
     request_or_change_id = StringVar(description="Request ID or change IDs (coma separated) from the changelog page.",
                                      label="Request/Change")
