@@ -11,6 +11,10 @@ from ipam.models import Prefix
 from extras.scripts import Script
 
 LEGACY_VLANS = (
+    'private1-c-eqiad',
+    'private1-d-eqiad',
+    'analytics1-c-eqiad',
+    'analytics1-d-eqiad',
     "private1-a-codfw",
     "private1-b-codfw",
     "private1-c-codfw",
