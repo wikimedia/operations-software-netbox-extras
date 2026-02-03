@@ -43,7 +43,7 @@ class VlanMigration(Script):
         for device in Device.objects.filter(
             role__slug="server",
             status="active",
-            site__slug__in=["codfw"],
+            site__slug__in=["eqiad", "codfw"],
             primary_ip4__isnull=False,
             custom_field_data__purchase_date__gte=five_years_ago,
         ):
