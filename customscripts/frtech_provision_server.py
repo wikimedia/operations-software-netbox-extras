@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from utilities.exceptions import AbortScript
 
 from dcim.choices import InterfaceTypeChoices
-from dcim.models import Device, Interface
+from dcim.models import Device, Interface, Rack
 from extras.scripts import ChoiceVar, IntegerVar, ObjectVar, Script, StringVar
 from ipam.models import IPAddress, Prefix, VLAN
 
@@ -11,13 +11,23 @@ from wmf_scripts_imports.common import format_logs, port_to_iface, Importer
 MGMT_IFACE_NAME = "mgmt"
 HOST_IFACE_PRIMARY = "bond0"
 FRACK_TENANT_SLUG = "fr-tech"
-VLAN_TYPES = (
-    "fundraising",
-    "administration",
-    "payments",
-    "listenerdmz",
-    "bastion"
-)
+
+VLAN_RACKS = {
+    "eqiad": {
+        "fundraising": "E16",
+        "administration": "E15",
+        "payments": "E15",
+        "listenerdmz": "E15",
+        "bastion": "E15",
+    },
+    "codfw": {
+        "fundraising": "C8",
+        "administration": "C8",
+        "payments": "C8",
+        "listenerdmz": "C8",
+        "bastion": "C8",
+    }
+}
 
 
 class ProvisionFundraisingServerNetwork(Script, Importer):
@@ -55,7 +65,7 @@ class ProvisionFundraisingServerNetwork(Script, Importer):
                                choices=interface_type_choices)
 
     vlan_type = ChoiceVar(
-        choices=[(value, value) for value in VLAN_TYPES],
+        choices=[(vlan_type, vlan_type) for vlan_type in VLAN_RACKS["eqiad"]],
         label="VLAN Type",
         description=("The VLAN type to use for assigning the primary IPs. The specific VLAN will be automatically "
                      "chosen based on device location.")
@@ -70,7 +80,7 @@ class ProvisionFundraisingServerNetwork(Script, Importer):
         self.provision_server(data)
         return format_logs(self.messages)
 
-    def provision_server(self, data: dict) -> None:  # noqa: too-many-return-statements
+    def provision_server(self, data: dict) -> None:  # noqa: too-many-return-statements  # pylint: disable=too-many-locals
         """Process a single device."""
         device = data['device']
         assign_mgmt = True
@@ -91,12 +101,26 @@ class ProvisionFundraisingServerNetwork(Script, Importer):
 
         cable_ids = {'a': data['cable_id_a'], 'b': data['cable_id_b']}
         # Get related objects
+        vlan_type = data['vlan_type']
         vlan = VLAN.objects.get(tenant__slug=FRACK_TENANT_SLUG, site=device.site,
-                                name__startswith=f"frack-{data['vlan_type']}")
+                                name__startswith=f"frack-{vlan_type}")
         try:
             prefix = vlan.prefixes.get()
         except Prefix.MultipleObjectsReturned as e:
             raise AbortScript(f"{device}: Vlan {vlan} has more than one IP prefix attached.") from e
+
+        # Check vlan against VLAN_RACKS to make sure it matches device location
+        rack_name = VLAN_RACKS[device.site.slug][vlan_type]
+        rack = Rack.objects.get(name=rack_name, site=device.site.id)
+        if rack.id != device.rack.id:
+            raise AbortScript(f"{device}: Rack {device.rack.name} invalid for vlan {vlan}, "
+                              f"select correct vlan or move server to rack {rack.name}")
+        self.log_info(f"{device}: Rack {rack.name} is correct for vlan {vlan}")
+
+        switches = Device.objects.filter(tenant__slug=FRACK_TENANT_SLUG, role__slug='asw',
+                                         status='active', site=device.site, rack=device.rack)
+        if not switches:
+            raise AbortScript(f"{device}: No frack switches found in rack {device.rack.name} - aborting!")
 
         # Create server bond0 interface and assign IP
         bond_iface = self._add_iface(HOST_IFACE_PRIMARY, device, iface_type=InterfaceTypeChoices.TYPE_LAG)
@@ -117,8 +141,6 @@ class ProvisionFundraisingServerNetwork(Script, Importer):
             device.save()
             self.log_success(f"{device}: set {device.oob_ip} as out-of-band IP for host.")
 
-        switches = Device.objects.filter(tenant__slug=FRACK_TENANT_SLUG, role__slug='asw',
-                                         status='active', site=device.site, rack=device.rack)
         # Configure ports and connections
         for switch in switches:
             # switch_member is either 'a' or 'b' based on our naming convention
