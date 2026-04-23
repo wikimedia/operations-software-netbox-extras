@@ -26,12 +26,13 @@ VLAN_POP_TYPES = ("public", "private")
 FRACK_TENANT_SLUG = "fr-tech"
 
 CSV_HEADERS = ('device',
-               'z_nbdevice',
-               'vlan',
-               'vlan_type',
+               'z_nbdevice',  # optional
                'z_port',
-               'interface_type',
-               'cable_id')
+               'cable_id',  # optional in some sites
+               'vlan_type',  # One of vlan_type or vlan required
+               'vlan',  # One of vlan_type or vlan required
+               'mgmt_mac',  # Only for supermicro
+               'interface_type')
 
 # Some vendors force us to use the MAC address
 # of the mgmt interface in the initial DHCP config.
@@ -49,6 +50,12 @@ SKIP_V6_DNS_PREFIXES = (
     "restbase",
 )
 
+INTERFACE_TYPE_CHOICES = (
+    (InterfaceTypeChoices.TYPE_1GE_FIXED, '1G'),
+    (InterfaceTypeChoices.TYPE_10GE_SFP_PLUS, '10G'),
+    (InterfaceTypeChoices.TYPE_25GE_SFP28, '25G')
+)
+
 
 class ProvisionServerNetworkCSV(Script):
 
@@ -61,7 +68,7 @@ class ProvisionServerNetworkCSV(Script):
     csv_file = FileVar(
         required=True,
         label="CSV import",
-        description="Template and example on https://phabricator.wikimedia.org/F32411089"
+        description="Template and example on https://wikitech.wikimedia.org/wiki/Netbox#ProvisionServerNetworkCSV"
     )
 
     def run(self, data: dict, commit: bool) -> str:  # noqa: unused-argument
@@ -79,10 +86,10 @@ class ProvisionServerNetworkCSV(Script):
                 continue
             provision_script = ProvisionServerNetwork()
             provision_script.provision_server(data)
-            self.log.extend(provision_script.log)
+            self.messages.extend(provision_script.messages)
         return format_logs(self.messages)
 
-    def _transform_csv(self, row: dict) -> dict:
+    def _transform_csv(self, row: dict) -> dict:  # noqa: too-many-return-statements
         """Transform the CSV fields to Netbox objects."""
         for header in CSV_HEADERS:
             try:
@@ -99,11 +106,12 @@ class ProvisionServerNetworkCSV(Script):
         except ObjectDoesNotExist:
             self.log_failure(f"{row['device']}: device not found, skipping.")
             return {}
-        try:
-            row['z_nbdevice'] = Device.objects.get(name=row['z_nbdevice'])
-        except ObjectDoesNotExist:
-            self.log_failure(f"{row['device']}: switch {row['z_nbdevice']} not found, skipping.")
-            return {}
+        if row['z_nbdevice']:
+            try:
+                row['z_nbdevice'] = Device.objects.get(name=row['z_nbdevice'])
+            except ObjectDoesNotExist:
+                self.log_failure(f"{row['device']}: switch {row['z_nbdevice']} not found, skipping.")
+                return {}
         if row['vlan']:
             try:
                 row['vlan'] = VLAN.objects.get(name=row['vlan'], site=row['device'].site)
@@ -111,6 +119,14 @@ class ProvisionServerNetworkCSV(Script):
                 self.log_failure(f"{row['device']}: vlan {row['vlan']} not found, skipping.")
                 return {}
         row['z_port'] = int(row['z_port'])
+
+        try:
+            row['interface_type'] = next(
+                (item[0] for item in INTERFACE_TYPE_CHOICES if item[1] == row['interface_type'])
+            )
+        except StopIteration:
+            self.log_failure(f"{row['device']}: invalid {row['interface_type']} interface type, skipping.")
+            return {}
 
         return row
 
@@ -140,15 +156,10 @@ class ProvisionServerNetwork(Script, Importer):
                         min_value=0,
                         max_value=48)
 
-    interface_type_choices = (
-        (InterfaceTypeChoices.TYPE_1GE_FIXED, '1G'),
-        (InterfaceTypeChoices.TYPE_10GE_SFP_PLUS, '10G'),
-        (InterfaceTypeChoices.TYPE_25GE_SFP28, '25G')
-    )
     interface_type = ChoiceVar(label="Interface type/speed",
                                description="Interface speed (Required)",
                                required=True,
-                               choices=interface_type_choices)
+                               choices=INTERFACE_TYPE_CHOICES)
 
     cable_id = StringVar(label="Cable ID", required=False)
 
