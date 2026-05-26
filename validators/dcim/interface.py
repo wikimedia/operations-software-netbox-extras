@@ -63,8 +63,8 @@ class Main(CustomValidator):
 
     def _check_trident3_port(self, instance: Interface) -> None:
         """Checks that the port speed is consistent with others in block due to Trident 3 constraint"""
-        port_number = int(instance.name.split("/")[-1])
-        if instance.device.device_type.manufacturer.slug == "juniper":
+        port_number = int(instance.name.split("/")[-1].split(":")[0])
+        if instance.device.device_type.manufacturer.slug == "juniper" and port_number < 48:
             # Regular port-block layout 0-3, 4-7, 8-11 etc.
             block_start = port_number - (port_number % 4)
             block_ports = range(block_start, block_start + 4)
@@ -76,18 +76,18 @@ class Main(CustomValidator):
             for device_int in device_ints:
                 # Get logical port number from interface name
                 try:
-                    port_num = int(device_int.name.replace("Ethernet", "").split("/")[-1])
+                    port_num = int(device_int.name.split("/")[-1].split(":")[0])
                 except ValueError:
                     # Don't block the user if there is an improperly named interface on the switch
                     continue
                 instance_speed = self._type_to_speed(instance.type)
                 device_int_speed = self._type_to_speed(device_int.type)
-                if port_num <= 47 and port_num in block_ports and device_int_speed != instance_speed:
+                if port_num in block_ports and device_int_speed != instance_speed:
                     self.fail(
                         f"Invalid type/speed '{instance.type}' (must be {device_int.type} "
                         f"to match {device_int.name} within the same block)", field="type"
                     )
-        elif instance.device.device_type.manufacturer.slug == "nokia":
+        elif instance.device.device_type.manufacturer.slug == "nokia" and port_number < 49:
             # Wonky Nokia port-block layout
             teng_compat = [1, 10]
             instance_speed = self._type_to_speed(instance.type)
