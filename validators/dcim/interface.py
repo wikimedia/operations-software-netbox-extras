@@ -175,7 +175,7 @@ class Main(CustomValidator):
 
         # Access switches physical port number are from 0 to 55 on Juniper, and 1 to 58 on Nokia
         if instance.type not in VIRTUAL_TYPES and not instance.mgmt_only and instance.device.role.slug == "asw":
-            physical_port = int(instance.name.split("/")[-1])
+            physical_port = int(instance.name.split("/")[-1].split(":")[0])
             vendor = instance.device.device_type.manufacturer.slug
             if vendor == 'juniper' and physical_port > 55:
                 self.fail(f"Port {physical_port} is outside of Juniper port range (0-55)", field="name")
