@@ -2,6 +2,7 @@ import re
 
 from dcim.choices import DeviceStatusChoices
 from extras.validators import CustomValidator
+from ipam.models import IPAddress
 
 # TODO: query them or import them from wmflib
 DATACENTERS = ("eqiad", "codfw", "esams", "ulsfo", "eqsin", "drmrs", "magru")
@@ -62,6 +63,13 @@ class Main(CustomValidator):
             allowed = re.compile(r"(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
             if not all(allowed.match(x) for x in instance.dns_name.split(".")):
                 self.fail("Invalid DNS name: must be a valid FQDN", field="dns_name")
+
+            # Check for uniqueness
+            same_dns_ips = IPAddress.objects.filter(dns_name=instance.dns_name).exclude(id=instance.id)
+            for same_dns_ip in same_dns_ips:
+                if same_dns_ip.family == instance.family and same_dns_ip.address != instance.address:
+                    self.fail(f"Invalid DNS name: Already in use on IP address {same_dns_ip}", field="dns_name")
+
         else:  # Prevent removing a mgmt_dns name on ACTIVE servers.
             if (getattr(instance.assigned_object, "mgmt_only", False)
                     and instance.assigned_object.device.status == DeviceStatusChoices.STATUS_ACTIVE):
