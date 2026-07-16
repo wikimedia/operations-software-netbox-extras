@@ -4,6 +4,7 @@ BLOCKLISTS:
   test_blank_cable_label: eqiad
 """
 
+import datetime
 import re
 
 from django.contrib.contenttypes.models import ContentType
@@ -26,6 +27,9 @@ EXCLUDE_STATUSES = (
     DeviceStatusChoices.STATUS_OFFLINE,
     DeviceStatusChoices.STATUS_PLANNED,
 )
+
+CUTOFF_WARN_DAYS = 60
+CUTOFF_CRIT_DAYS = 120
 
 interface_ct = ContentType.objects.get_for_model(Interface)
 
@@ -104,3 +108,19 @@ class Cables(Report):
             else:
                 successes += 1
         self.log_success(None, f"{successes} cables correctly connected.")
+
+    def test_old_planned_cables(self) -> None:
+        """Alert if a cable has the planned status for too long."""
+        successes = 0
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cutoff_warn = now - datetime.timedelta(days=CUTOFF_WARN_DAYS)
+        cutoff_crit = now - datetime.timedelta(days=CUTOFF_CRIT_DAYS)
+        for cable in Cable.objects.filter(status='planned'):
+            if cable.last_updated < cutoff_warn:
+                self.log_failure(cable, f"Cable with 'planned' status for more than {CUTOFF_CRIT_DAYS} days")
+                continue
+            if cable.last_updated < cutoff_crit:
+                self.log_warning(cable, f"Cable with 'planned' status for more than {CUTOFF_WARN_DAYS} days")
+                continue
+            successes += 1
+        self.log_success(None, f"{successes} recent 'planned' cables.")
