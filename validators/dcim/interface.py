@@ -23,7 +23,7 @@ INTERFACES_REGEXP = re.compile(
                 r"^vcp-\d+/\d+/\d+$",  # Juniper legacy (eg vcp-0/0/0)
                 r"^[a-z]{1,4}(\d+){0,1}(\.\d+){0,1}$",  # typical device names (eg. eth0, vlan.900, etc)
                 r"^\d+$",  # Netgear switch (just numbers)
-                r"^ethernet-1/\d+(\.\d+){0,1}$",  # Nokia 7220 (i.e. ethernet-1/47, ethernet-1/47.100)
+                r"^ethernet-1/\d+(/\d+)?(\.\d+)?$",  # Nokia (i.e. ethernet-1/47, ethernet-1/47.100, ethernet-1/47/1)
             )
         )
     )
