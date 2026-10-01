@@ -51,6 +51,8 @@ NOKIA_PORT_BLOCKS = [
     (44, 46, 47, 48)
 ]
 
+NOKIA_BREAKOUT_REGEXP = r"^ethernet-1/\d+/\d+$"
+
 
 class Main(CustomValidator):
     """Main class referenced in the Netbox config"""
@@ -87,7 +89,11 @@ class Main(CustomValidator):
                         f"Invalid type/speed '{instance.type}' (must be {device_int.type} "
                         f"to match {device_int.name} within the same block)", field="type"
                     )
-        elif instance.device.device_type.manufacturer.slug == "nokia" and port_number < 49:
+        elif (
+            instance.device.device_type.manufacturer.slug == "nokia"
+            and port_number < 49
+            and not re.match(NOKIA_BREAKOUT_REGEXP, instance.name)
+        ):
             # Wonky Nokia port-block layout
             teng_compat = [1, 10]
             instance_speed = self._type_to_speed(instance.type)
@@ -169,9 +175,21 @@ class Main(CustomValidator):
         ):
             self._check_trident3_port(instance)
 
-        # child interfaces must be virtual
-        if instance.parent and (instance.type not in VIRTUAL_TYPES):
-            self.fail(f"Child interfaces must be one of those types: {VIRTUAL_TYPES}.", field="type")
+        if re.match(NOKIA_BREAKOUT_REGEXP, instance.name):
+            # Nokia SR-Linux breakout interfaces should have a parent set
+            parent_name = "/".join(instance.name.split("/")[0:-1])
+            try:
+                instance.device.interfaces.get(name=parent_name)
+            except Interface.DoesNotExist:
+                self.fail(f"Invalid breakout-port {instance}, no parent called {parent_name} exists", field="name")
+            # All the breakout ports must be of the same speed/type
+            breakout_ints = instance.device.interfaces.filter(name__startswith=f"{parent_name}/")
+            for breakout_int in breakout_ints:
+                if breakout_int.type != instance.type:
+                    self.fail(
+                        f"Invalid type/speed '{instance.type}' (must be {breakout_int.type} "
+                        f"to match {breakout_int.name} within the same breakout)", field="type"
+                    )
 
         # Access switches physical port number are from 0 to 55 on Juniper, and 1 to 58 on Nokia
         if instance.type not in VIRTUAL_TYPES and not instance.mgmt_only and instance.device.role.slug == "asw":
