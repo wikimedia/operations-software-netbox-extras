@@ -9,7 +9,6 @@ Requires google-api-python-client and google-auth-oauthlib.
 
 import configparser
 from datetime import date, datetime, timedelta
-from urllib.parse import urlparse
 
 from dcim.models import Device
 from extras.reports import Report
@@ -18,8 +17,7 @@ from netbox import configuration
 import googleapiclient.discovery
 from google.oauth2 import service_account
 from google_auth_httplib2 import AuthorizedHttp
-from httplib2 import Http, ProxyInfo
-from httplib2.socks import PROXY_TYPE_HTTP
+from httplib2 import Http, proxy_info_from_url
 
 CONFIG_FILE = "/etc/netbox/gsheets.cfg"
 
@@ -60,8 +58,8 @@ class Accounting(Report):
             creds, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
         )
         try:
-            proxy = urlparse(configuration.HTTP_PROXIES.get("https", configuration.HTTP_PROXIES["http"]))
-            http = Http(proxy_info=ProxyInfo(PROXY_TYPE_HTTP, proxy.hostname, proxy.port))
+            proxy_url = configuration.HTTP_PROXIES.get("https", configuration.HTTP_PROXIES["http"])
+            http = Http(proxy_info=proxy_info_from_url(proxy_url))
         except (KeyError, AttributeError):
             # either no or badly formed HTTP_PROXIES
             http = Http()
