@@ -1,5 +1,6 @@
 """Several integrity/coherence checks against the data."""
 
+import datetime
 from collections import Counter
 
 from dcim.choices import DeviceStatusChoices
@@ -34,6 +35,9 @@ SPARE_EXCLUDED_DEVICE_TYPES = ("fs750t2",)
 
 # Racks with at least this many active servers must have active production and management switches.
 MIN_ACTIVE_SERVERS_PER_RACK = 5
+
+# Devices with the planned status not modified for this many days are flagged (about 6 months).
+PLANNED_DEVICES_CUTOFF_DAYS = 180
 
 
 class Rack(Report):
@@ -190,3 +194,25 @@ class NetworkSpares(Report):
             None,
             f"{covered} site/device type pairs have at least one spare in inventory",
         )
+
+
+class DevicesCoherence(Report):
+    description = "Several integrity/coherence checks against the device related data."
+
+    def test_old_planned_devices(self) -> None:
+        """Alert if a device has the planned status and was not modified for too long."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cutoff = now - datetime.timedelta(days=PLANNED_DEVICES_CUTOFF_DAYS)
+        old = (
+            Device.objects.filter(status=DeviceStatusChoices.STATUS_PLANNED, last_updated__lt=cutoff)
+            .select_related("site")
+            .order_by("site__slug", "name")
+        )
+        for device in old:
+            self.log_failure(
+                device,
+                (
+                    f"{device.site.slug}: device with 'planned' status not modified for "
+                    f"{(now - device.last_updated).days} days (more than {PLANNED_DEVICES_CUTOFF_DAYS})"
+                ),
+            )
