@@ -4,10 +4,21 @@ from collections import Counter
 
 from dcim.choices import DeviceStatusChoices
 from dcim.models import Device, DeviceType, Site
+# Rename to RackModel to not clash with the "class Rack" bellow
+from dcim.models import Rack as RackModel
 from extras.reports import Report
 
-# Network device roles for which we keep spares in inventory.
-NETWORK_ROLES = ("asw", "cr", "mr", "pfw", "cloudsw", "msw")
+# Production (top of rack) switch roles.
+PRODUCTION_SWITCH_ROLES = ("asw", "cloudsw")
+
+# Management switch roles.
+MANAGEMENT_SWITCH_ROLES = ("msw",)
+
+# All switch roles, each site in SPARE_REQUIRED_SITES should keep a spare per device type of these.
+SWITCH_ROLES = PRODUCTION_SWITCH_ROLES + MANAGEMENT_SWITCH_ROLES
+
+# All network device roles, spares of these in inventory are checked for being still needed.
+NETWORK_ROLES = SWITCH_ROLES + ("cr", "mr", "pfw")
 
 # Statuses meaning a device type is still (or about to be) used in production.
 IN_USE_STATUSES = (
@@ -15,14 +26,14 @@ IN_USE_STATUSES = (
     DeviceStatusChoices.STATUS_PLANNED,
 )
 
-# Switch roles for which each site should keep at least one spare per device type.
-SPARE_REQUIRED_ROLES = ("asw", "cloudsw", "msw")
-
 # Sites where spares are expected to be stored.
 SPARE_REQUIRED_SITES = ("eqiad", "codfw")
 
 # Device type slugs not requiring a spare (e.g. models being phased out).
 SPARE_EXCLUDED_DEVICE_TYPES = ("fs750t2",)
+
+# Racks with at least this many active servers must have active production and management switches.
+MIN_ACTIVE_SERVERS_PER_RACK = 5
 
 
 class Rack(Report):
@@ -43,6 +54,44 @@ class Rack(Report):
                     good = False
             if not good:
                 self.log_failure(device, " ".join(msgs))
+
+    def test_rack_switches_active(self) -> None:
+        """Check that racks with enough active servers have active production and management switches."""
+        active = Device.objects.filter(status=DeviceStatusChoices.STATUS_ACTIVE, rack__isnull=False).order_by()
+
+        # Racks with at least one active production or management switch.
+        production_racks = set(active.filter(role__slug__in=PRODUCTION_SWITCH_ROLES).values_list("rack_id", flat=True))
+        management_racks = set(active.filter(role__slug__in=MANAGEMENT_SWITCH_ROLES).values_list("rack_id", flat=True))
+
+        # Number of active servers per rack, keeping only the racks above the threshold.
+        servers = Counter(active.filter(role__slug="server").values_list("rack_id", flat=True))
+        busy_racks = {rack_id: count for rack_id, count in servers.items() if count >= MIN_ACTIVE_SERVERS_PER_RACK}
+
+        racks = RackModel.objects.select_related("site").in_bulk(busy_racks)
+        good = 0
+        for rack in sorted(racks.values(), key=lambda rack: (rack.site.slug, rack.name)):
+            missing = []
+            if rack.id not in production_racks:
+                missing.append(f"production switch ({'/'.join(PRODUCTION_SWITCH_ROLES)})")
+            if rack.id not in management_racks:
+                missing.append(f"management switch ({'/'.join(MANAGEMENT_SWITCH_ROLES)})")
+            if not missing:
+                good += 1
+                continue
+            self.log_failure(
+                rack,
+                (
+                    f"{rack.site.slug}: rack {rack.name} has {busy_racks[rack.id]} active servers "
+                    f"but no active {' and no active '.join(missing)}"
+                ),
+            )
+        self.log_success(
+            None,
+            (
+                f"{good} racks with at least {MIN_ACTIVE_SERVERS_PER_RACK} active servers "
+                "have active production and management switches"
+            ),
+        )
 
 
 class NetworkSpares(Report):
@@ -97,7 +146,7 @@ class NetworkSpares(Report):
         in_use = Counter(
             Device.objects.filter(
                 status__in=IN_USE_STATUSES,
-                role__slug__in=SPARE_REQUIRED_ROLES,
+                role__slug__in=SWITCH_ROLES,
                 site__slug__in=SPARE_REQUIRED_SITES,
             )
             .exclude(device_type__slug__in=SPARE_EXCLUDED_DEVICE_TYPES)
