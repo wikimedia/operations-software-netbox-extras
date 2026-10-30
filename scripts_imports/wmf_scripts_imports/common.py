@@ -37,7 +37,7 @@ INTERFACE_IMPORT_BLOCKLIST_RE = (re.compile(r"^lo.*$"),  # Loopback
                                  re.compile(r"^idrac$"),)  # virtual idrac device if enabled in bios
 
 # Interface 'kinds' we skip when importing
-INTERFACE_IMPORT_BLOCKLIST_KINDS = ('openvswitch', 'vxlan', 'ipip', 'ip6tnl', 'veth', 'tun')
+INTERFACE_IMPORT_BLOCKLIST_KINDS = ('openvswitch', 'vxlan', 'ipip', 'tunl', 'ip6tnl', 'veth', 'tun')
 
 # Hostname regexes that are immune to VIP removal because of a bug in provisioning them
 # this is a temporary work around until 618766 is merged. The "VIP"s on these hosts will
@@ -688,7 +688,7 @@ class Importer:
         vlan_parents = set()
         for iface_name, iface_facts in interfaces.items():
             # We skip certain interfaces based on their kind
-            if iface_facts.get('kind', '') in INTERFACE_IMPORT_BLOCKLIST_KINDS:
+            if iface_facts.get('kind', '').startswith(INTERFACE_IMPORT_BLOCKLIST_KINDS):
                 self.log_info(f"Skipping {iface_name} as we do not import {iface_facts['kind']} interfaces.")
                 continue
             if iface_facts.get('kind', '') == "bridge":
