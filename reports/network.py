@@ -41,7 +41,7 @@ class Network(Report):
 
     description = __doc__
 
-    def test_duplicate_interface(self):
+    def test_duplicate_interface(self) -> None:
         """Report duplicated interfaces on switches (and switch stack).
 
         Juniper only.
@@ -84,7 +84,7 @@ class Network(Report):
                 continue
             seen_interfaces[interface.device.name].add(interface.name.split("-")[1])
 
-    def test_enabled_not_connected(self):
+    def test_enabled_not_connected(self) -> None:
         """No interface on a network device should be enabled but not connected.
 
         Exception being management switches as we don't document them in core sites.
@@ -96,6 +96,7 @@ class Network(Report):
             .exclude(type__in=VIRTUAL_IFACE_TYPES)
             .exclude(mgmt_only=True)
             .exclude(enabled=False)
+            .exclude(mark_connected=True)
         ):
             # Warning only for interfaces with "no-mon" in the description
             if interface.description and "no-mon" in interface.description:
@@ -141,7 +142,7 @@ class Network(Report):
             success += 1
         self.log_success(None, f"{success} devices with operational primary IPv6")
 
-    def test_duplicate_ip_netmask(self):
+    def test_duplicate_ip_netmask(self) -> None:
         """Report to check for duplicate IPs with different netmasks.
 
         When an IP is marked as VIP, Netbox allows to create it duplicated with different netmasks like 10.0.0.0/32 and
@@ -163,7 +164,7 @@ class Network(Report):
                 success += 1
         self.log_success(None, f"{success} correctly masked VIPs")
 
-    def test_primary_ip_dns_match(self):
+    def test_primary_ip_dns_match(self) -> None:
         """Check that primary IPv4/IPv6 DNS names match.
 
         If a device have both a primary IPv4 and IPv6 with DNS names, check that they match.  Also, check that the
@@ -196,7 +197,7 @@ class Network(Report):
             success += 1
         self.log_success(None, f"{success} devices with matching primary IPv4 & IPv6")
 
-    def test_mgmt_dns_hostname(self):
+    def test_mgmt_dns_hostname(self) -> None:
         """No interface on a network device should be enabled but not connected.
 
         Exception being management switches as we don't document them in core sites.
@@ -225,7 +226,7 @@ class Network(Report):
                 success += 1
         self.log_success(None, f"{success} correct mgmt DNS names")
 
-    def test_matching_vlan(self):
+    def test_matching_vlan(self) -> None:
         """Check IPs are assigned to server ports match the connected Vlan.
 
         Every IP address bound to a host interface should come from the correct
@@ -291,7 +292,7 @@ class Network(Report):
                 f"{success} server IP allocations matched attached switch port Vlan.",
             )
 
-    def test_port_block_consistency(self):
+    def test_port_block_consistency(self) -> None:
         """Validate that port types within each block of 4 are consistent for QFX5120 series.
 
         Trident 3 based devices like the QFX5120 have a constraint that port speeds (1/10/25Gb)
