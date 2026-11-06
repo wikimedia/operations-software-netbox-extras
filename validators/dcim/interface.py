@@ -4,7 +4,7 @@ import re
 
 from typing import Optional
 
-from dcim.choices import InterfaceTypeChoices
+from dcim.choices import InterfaceModeChoices, InterfaceTypeChoices
 from dcim.models import Interface
 from extras.validators import CustomValidator
 from ipam.models import VLAN
@@ -129,6 +129,14 @@ class Main(CustomValidator):
                 VLAN.objects.get(vid=vid, site=instance.device.site.id)
             except (ValueError, ObjectDoesNotExist):
                 self.fail("IRB interface invalid - does not match vlan at this site.", field="name")
+
+        # Interfaces in access mode must have an untagged VLAN (physical interfaces only)
+        if (
+            instance.type not in VIRTUAL_TYPES
+            and instance.mode == InterfaceModeChoices.MODE_ACCESS
+            and not instance.untagged_vlan
+        ):
+            self.fail("Physical interfaces in access mode must have an untagged VLAN set", field="untagged_vlan")
 
         # MTU
         if (
