@@ -31,7 +31,7 @@ def parse_command_line_args() -> argparse.Namespace:
     parser.add_argument(
         "-c",
         "--config",
-        default="/etc/netbox/update-in-service-date.ini",
+        default="/etc/netbox/set-in-service-date.ini",
         help="The path to the config file to load.",
     )
     parser.add_argument(
