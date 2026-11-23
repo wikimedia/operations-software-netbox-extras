@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# Sets the Netbox In Service Date for physical servers, which is used by
+# Sets the Netbox "In service date" for physical servers, which is used by
 # accounting for the depreciation of assets.
 #
 # 1. Queries Netbox for hosts that were purchased after the accounting start
