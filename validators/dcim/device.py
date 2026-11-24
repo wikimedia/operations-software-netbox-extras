@@ -79,7 +79,7 @@ class Main(CustomValidator):
             datetime.date.fromisoformat(str(purchase_date))
             > datetime.datetime.today().date()
         ):
-            self.fail("Invalid purchase date (must not be in the future", field="cf_purchase_date")
+            self.fail("Invalid purchase date (must not be in the future)", field="cf_purchase_date")
 
         # ticket
         ticket = str(instance.cf["ticket"])
